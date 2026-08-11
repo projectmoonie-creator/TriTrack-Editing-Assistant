@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tritrack-editing-assistant"
+version = "0.1.0a0"
+description = "Local-first editing-assistant building blocks for Final Cut Pro workflows"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+  { name = "Hsin-Hsin Yuan" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "numpy>=2,<3",
+  "openpyxl>=3.1,<4",
+]
+
+[project.scripts]
+tritrack = "tritrack_editing_assistant.cli:main"
+
+[project.optional-dependencies]
+dev = ["build>=1.2,<2", "ruff>=0.12,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tritrack_editing_assistant = [
+  "schemas/*.json",
+  "profiles/*.json",
+  "providers/*.mjs",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
