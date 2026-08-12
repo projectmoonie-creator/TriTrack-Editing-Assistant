@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/grouping-v1.schema.json",
+  "title": "TriTrack editorial grouping v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "questions", "reserve"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.grouping/v1"},
+    "questions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/question"}
+    },
+    "reserve": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/reserveRange"}
+    }
+  },
+  "$defs": {
+    "answerRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takeId", "startMs", "endMs"],
+      "properties": {
+        "takeId": {"type": "string", "minLength": 1},
+        "startMs": {"type": "integer", "minimum": 0},
+        "endMs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question", "answers"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "question": {"type": "string", "minLength": 1},
+        "answers": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/answerRange"}
+        }
+      }
+    },
+    "reserveRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takeId", "startMs", "endMs", "reason"],
+      "properties": {
+        "takeId": {"type": "string", "minLength": 1},
+        "startMs": {"type": "integer", "minimum": 0},
+        "endMs": {"type": "integer", "minimum": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

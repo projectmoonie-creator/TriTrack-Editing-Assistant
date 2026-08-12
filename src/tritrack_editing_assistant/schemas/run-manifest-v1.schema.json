@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/run-manifest-v1.schema.json",
+  "title": "TriTrack run manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "toolVersion", "runId", "profileId", "stages"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.run-manifest/v1"},
+    "toolVersion": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "profileId": {"type": "string", "minLength": 1},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "stages": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/stage"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "inputHashes", "receiptSha256"],
+      "properties": {
+        "name": {
+          "enum": [
+            "doctor",
+            "sync",
+            "transcribe",
+            "align",
+            "hybrid",
+            "emit",
+            "validate",
+            "organize",
+            "paper"
+          ]
+        },
+        "status": {"enum": ["planned", "running", "completed", "failed", "skipped"]},
+        "inputHashes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9]*$"},
+          "additionalProperties": {"$ref": "#/$defs/sha256"}
+        },
+        "receiptSha256": {"$ref": "#/$defs/sha256"},
+        "outputManifestSha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

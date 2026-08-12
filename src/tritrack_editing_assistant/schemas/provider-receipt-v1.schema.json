@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/provider-receipt-v1.schema.json",
+  "title": "TriTrack optional provider receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "operation",
+    "requestedModel",
+    "observedModel",
+    "audioSha256",
+    "requestStatus",
+    "responseStatus",
+    "upload",
+    "serverFileDeletion"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.provider-receipt/v1"},
+    "provider": {"type": "string", "minLength": 1},
+    "operation": {"const": "audio-transcription"},
+    "requestedModel": {"type": "string", "minLength": 1},
+    "observedModel": {"type": ["string", "null"], "minLength": 1},
+    "audioSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "requestStatus": {"enum": ["completed", "failed", "privacy-incomplete"]},
+    "responseStatus": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+    "upload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "serverFileIdSha256"],
+      "properties": {
+        "status": {"enum": ["not-started", "completed", "failed"]},
+        "serverFileIdSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "serverFileDeletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "confirmed", "statusCode"],
+      "properties": {
+        "attempted": {"type": "boolean"},
+        "confirmed": {"type": "boolean"},
+        "statusCode": {"type": ["integer", "null"], "minimum": 100, "maximum": 599}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "serverFileDeletion": {
+            "properties": {"confirmed": {"const": false}},
+            "required": ["confirmed"]
+          }
+        }
+      },
+      "then": {"properties": {"requestStatus": {"const": "privacy-incomplete"}}}
+    }
+  ]
+}

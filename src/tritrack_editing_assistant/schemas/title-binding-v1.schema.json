@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/title-binding-v1.schema.json",
+  "title": "TriTrack public title binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "bindingId", "effectName", "effectUid", "parameters"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.title-binding/v1"},
+    "bindingId": {"type": "string", "minLength": 1},
+    "effectName": {"type": "string", "minLength": 1},
+    "effectUid": {"type": "string", "minLength": 1},
+    "parameters": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/parameter"},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "value": {"type": ["string", "number", "boolean"]}
+      }
+    }
+  }
+}
