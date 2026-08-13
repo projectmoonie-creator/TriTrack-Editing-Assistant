@@ -1,0 +1,4 @@
+interface:
+  display_name: "TriTrack Editing Assistant Maintainer"
+  short_description: "Cold-start and govern public TriTrack maintenance"
+  default_prompt: "Use $tritrack-editing-assistant-maintainer OSS 開工 to resume public repository maintenance from its local status and fail closed outside the public project."

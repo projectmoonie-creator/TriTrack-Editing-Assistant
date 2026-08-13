@@ -10,5 +10,7 @@ format follows Keep a Changelog, and releases will use semantic versioning.
 - Clean-history Python package scaffold.
 - Machine-readable registry for the eleven planned workflow components.
 - Stable command exit-code boundary and public project policies.
+- Fail-closed public-maintainer project identity, repository-local governance,
+  and a separate `OSS` maintenance skill.
 
 No public tag or package release exists yet.

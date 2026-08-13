@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "tritrack.project-identity/v1",
+  "projectId": "tritrack-editing-assistant",
+  "projectKind": "public-engine",
+  "maintainerSkill": "tritrack-editing-assistant-maintainer",
+  "lane": "OSS"
+}

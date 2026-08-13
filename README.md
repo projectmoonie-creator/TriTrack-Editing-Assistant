@@ -5,10 +5,10 @@ editable Final Cut Pro interview workflows from local A/B-camera media. It is
 designed for editors working with a terminal-capable agent while keeping story
 decisions with the editor.
 
-> Development scaffold: `0.1.0a0` currently exposes the command and component
-> registry only. Editing commands are listed as `planned` and deliberately
-> return a non-success status until their implementation and tests land. There
-> is no public release yet.
+> Development scaffold: `0.1.0a0` currently exposes the component registry and
+> the fail-closed `doctor` command. Editing commands are listed as `planned`
+> and deliberately return a non-success status until their implementation and
+> tests land. There is no public release yet.
 
 ## Target alpha compatibility
 
@@ -47,8 +47,16 @@ venv/bin/pip install -e '.[dev]'
 venv/bin/tritrack components --json
 ```
 
-The planned public installation and `doctor` workflow will be documented only
-after those commands are implemented and verified.
+Run the implemented compatibility preflight with:
+
+```bash
+venv/bin/tritrack doctor \
+  --profile uhd-2997-ndf-fcpxml-1.14 \
+  --json
+```
+
+The command reports sanitized dependency and compatibility checks. It does not
+claim that a manual Final Cut import occurred.
 
 ## Eleven-component roadmap
 
@@ -82,5 +90,7 @@ count.
 - [Security and private-media reporting](SECURITY.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](CHANGELOG.md)
+- [Public roadmap](docs/ROADMAP.md)
+- [Current maintenance status](STATUS.md)
 
 Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
