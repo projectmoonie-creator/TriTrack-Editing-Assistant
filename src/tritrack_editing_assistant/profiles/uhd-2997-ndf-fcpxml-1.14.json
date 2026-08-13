@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "tritrack.compatibility-profile/v1",
+  "profileId": "uhd-2997-ndf-fcpxml-1.14",
+  "fcpxmlVersion": "1.14",
+  "frameDuration": "1001/30000s",
+  "width": 3840,
+  "height": 2160,
+  "timecodeFormat": "NDF",
+  "audioRate": 48000,
+  "colorSpace": "1-1-1 (Rec. 709)"
+}

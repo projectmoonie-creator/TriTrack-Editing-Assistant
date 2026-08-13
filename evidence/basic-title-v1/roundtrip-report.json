@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "tritrack.basic-title-roundtrip-report/v1",
+  "profileId": "uhd-2997-ndf-fcpxml-1.14",
+  "bindingId": "basic-title-v1",
+  "observedOn": "2026-08-13",
+  "environment": {
+    "macOS": "26.5.2",
+    "architecture": "arm64",
+    "finalCutPro": "12.3",
+    "fcpxml": "1.14"
+  },
+  "project": {
+    "frameDuration": "1001/30000s",
+    "width": 3840,
+    "height": 2160,
+    "timecodeFormat": "NDF",
+    "audioRate": 48000,
+    "colorSpace": "1-1-1 (Rec. 709)"
+  },
+  "capture": {
+    "effectName": "Basic Title",
+    "dtdValidation": "passed",
+    "bindingContractValidation": "passed",
+    "sourceSha256": "a96b6caa9bca8f6bfa45ddd989ea79c5527e8cf585a6ee15e3e2d53d14bd1b97",
+    "bindingSha256": "7b66a018f42262f0a4c87ebc8e77d5336770959bd6990ff333e5bd921f7b592f"
+  },
+  "roundtrip": {
+    "generatedTitle": "TRITRACK GENERATED BASIC TITLE",
+    "editedTitle": "TRITRACK ROUNDTRIP EDIT CONFIRMED",
+    "generatedDtdValidation": "passed",
+    "finalCutImportWarnings": 0,
+    "editedInFinalCut": true,
+    "reexportDtdValidation": "passed",
+    "recapturedBindingMatches": true,
+    "generatedSha256": "dd4259259d700bb82a41e577282a26cc6c97655a4dc5c42080136fc29d180556",
+    "reexportSha256": "a83180c785d8433d6e4e76d6fb8b4a79264ecd92dfab4977b9ea4d9e644e24e0"
+  },
+  "privacy": {
+    "absoluteSourceAttributes": 0,
+    "privatePaths": 0,
+    "privateFonts": 0,
+    "privateTemplates": 0
+  },
+  "rejectedAttempts": [
+    "customized default title instead of Apple Basic Title",
+    "non-frame-aligned timing that produced import warnings"
+  ]
+}

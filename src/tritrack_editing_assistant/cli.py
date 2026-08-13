@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sequence
+from pathlib import Path
 
 from . import __version__
+from . import doctor as doctor_module
 
 EXIT_OK = 0
 EXIT_USAGE = 64
@@ -76,6 +78,33 @@ def _planned_command(arguments: argparse.Namespace) -> int:
     return EXIT_USAGE
 
 
+def _print_doctor(arguments: argparse.Namespace) -> int:
+    try:
+        doctor_arguments = {
+            "profile_id": arguments.profile,
+            "transcription_requested": arguments.transcription,
+            "whisper_model": arguments.whisper_model,
+        }
+        if arguments.output is None:
+            receipt = doctor_module.build_receipt(**doctor_arguments)
+        else:
+            receipt = doctor_module.write_receipt(arguments.output, **doctor_arguments)
+    except ValueError as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return EXIT_OUTPUT_EXISTS if code == "TRITRACK_OUTPUT_EXISTS" else EXIT_POLICY
+
+    if arguments.json or arguments.output is None:
+        print(json.dumps(receipt, ensure_ascii=False, indent=2))
+    if receipt["supported"]:
+        return EXIT_OK
+    checks = receipt["checks"]
+    assert isinstance(checks, list)
+    if any(check["status"] in {"missing", "unreadable"} for check in checks):
+        return EXIT_DEPENDENCY
+    return EXIT_POLICY
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -95,8 +124,22 @@ def build_parser() -> argparse.ArgumentParser:
     components.add_argument("--json", action="store_true", help="emit JSON")
     components.set_defaults(handler=_print_components)
 
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="inspect the local compatibility profile and dependencies",
+    )
+    doctor.add_argument("--profile", required=True, help="closed compatibility profile id")
+    doctor.add_argument("--output", type=Path, help="create an absent receipt path")
+    doctor.add_argument("--json", action="store_true", help="print the sanitized receipt")
+    doctor.add_argument(
+        "--transcription",
+        action="store_true",
+        help="also require a readable local whisper model",
+    )
+    doctor.add_argument("--whisper-model", type=Path)
+    doctor.set_defaults(handler=_print_doctor)
+
     planned_commands = {
-        "doctor": "inspect the local compatibility profile and dependencies",
         "sync": "discover and audio-verify A/B camera pairs",
         "transcribe": "transcribe local takes",
         "align": "align provider-neutral text to local cue timing",

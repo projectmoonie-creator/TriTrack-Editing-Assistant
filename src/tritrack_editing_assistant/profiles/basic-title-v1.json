@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "tritrack.title-binding/v1",
+  "bindingId": "basic-title-v1",
+  "effectName": "Basic Title",
+  "effectUid": ".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti",
+  "parameters": [
+    {"name": "alignment", "value": "center"},
+    {"name": "font", "value": "Helvetica"},
+    {"name": "fontColor", "value": "1 1 1 1"},
+    {"name": "fontFace", "value": "Regular"},
+    {"name": "fontSize", "value": 96}
+  ]
+}
