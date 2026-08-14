@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -156,6 +157,10 @@ class DoctorTest(unittest.TestCase):
         self.assertNotIn("Secret", encoded)
         self.assertEqual(receipt["schemaVersion"], "tritrack.doctor-receipt/v1")
 
+    @unittest.skipUnless(
+        sys.platform == "darwin",
+        "requires the declared local Final Cut and FCPXML DTD environment",
+    )
     def test_cli_doctor_emits_the_real_supported_receipt(self) -> None:
         output = io.StringIO()
         with redirect_stdout(output):
