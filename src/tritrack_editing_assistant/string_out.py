@@ -33,6 +33,7 @@ class TimelineClip:
     path: Path
     offset_frames: int
     duration_frames: int
+    audio_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -237,6 +238,7 @@ def build_string_out(
                 source_a.path,
                 a_offset,
                 source_a.duration_frames,
+                pair["audioMaster"] == "A",
             ),
             TimelineClip(
                 "B",
@@ -244,6 +246,7 @@ def build_string_out(
                 source_b.path,
                 b_offset,
                 source_b.duration_frames,
+                pair["audioMaster"] == "B",
             ),
         )
         segments.append(
@@ -271,6 +274,7 @@ def build_string_out(
                             source.path,
                             cursor,
                             source.duration_frames,
+                            True,
                         ),
                     ),
                 )

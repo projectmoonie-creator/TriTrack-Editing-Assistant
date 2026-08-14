@@ -230,7 +230,11 @@ def probe_media(
         "-print_format",
         "json",
         "-show_entries",
-        "format=duration:format_tags=creation_time:stream=codec_type",
+        (
+            "format=duration:format_tags=creation_time:"
+            "stream=codec_type,width,height,r_frame_rate,color_space,"
+            "color_transfer,color_primaries,sample_rate,channels"
+        ),
         str(source.path),
     ]
     result = process.run_bounded(
@@ -260,15 +264,35 @@ def probe_media(
     if creation_time is not None and not isinstance(creation_time, str):
         raise ValueError("TRITRACK_SYNC_PROBE_INVALID")
     start = parse_media_time(creation_time) if creation_time else None
-    has_audio = any(
-        isinstance(stream, Mapping) and stream.get("codec_type") == "audio"
+    video_streams = [
+        stream
         for stream in streams
-    )
+        if isinstance(stream, Mapping) and stream.get("codec_type") == "video"
+    ]
+    audio_streams = [
+        stream
+        for stream in streams
+        if isinstance(stream, Mapping) and stream.get("codec_type") == "audio"
+    ]
+    video_stream = video_streams[0] if video_streams else {}
+    audio_stream = audio_streams[0] if audio_streams else {}
     return {
         "id": source.media_id,
         "duration_seconds": duration,
         "start": start,
-        "has_audio": has_audio,
+        "has_audio": bool(audio_streams),
+        "compatibility": {
+            "videoStreamCount": len(video_streams),
+            "audioStreamCount": len(audio_streams),
+            "width": video_stream.get("width"),
+            "height": video_stream.get("height"),
+            "frameRate": video_stream.get("r_frame_rate"),
+            "colorSpace": video_stream.get("color_space"),
+            "colorTransfer": video_stream.get("color_transfer"),
+            "colorPrimaries": video_stream.get("color_primaries"),
+            "sampleRate": audio_stream.get("sample_rate"),
+            "channels": audio_stream.get("channels"),
+        },
         "source": source,
     }
 

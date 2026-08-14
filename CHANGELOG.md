@@ -18,4 +18,12 @@ format follows Keep a Changelog, and releases will use semantic versioning.
   integer-frame timing, public Basic Title labels, strict input validation,
   XML escaping, stable identifiers, and atomic no-overwrite publication.
 
+### Fixed
+
+- Apply each synchronization pair's declared audio master instead of enabling
+  both camera audio tracks.
+- Reject source media that does not expose the declared UHD 29.97, Rec. 709,
+  stereo 48 kHz profile fields, and return controlled CLI data errors for
+  malformed top-level sync-map JSON.
+
 No public tag or package release exists yet.

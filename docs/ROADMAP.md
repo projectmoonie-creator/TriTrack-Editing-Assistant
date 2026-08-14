@@ -13,8 +13,8 @@ here.
 - Task 5: audio-verified A/B synchronization from the reviewed clean-room
   intake, with strict `sync-map-v1` and no-overwrite publication.
 - Task 6: profile-bound FCPXML 1.14 emission and deterministic string-out, with
-  integer-frame timing, strict public profile and binding checks, and atomic
-  no-overwrite publication.
+  integer-frame timing, strict public profile, source-probe and binding checks,
+  sync-map audio-master selection, and atomic no-overwrite publication.
 
 ## Next
 

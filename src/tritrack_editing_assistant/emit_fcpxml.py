@@ -190,18 +190,21 @@ def render_fcpxml(
             },
         )
         for lane, clip in enumerate(segment.clips, start=1):
+            clip_attributes = {
+                "ref": source_ids[(clip.camera, clip.media_id)],
+                "lane": str(lane),
+                "offset": _frame_time(timeline, clip.offset_frames),
+                "name": clip.media_id,
+                "start": "0s",
+                "duration": _frame_time(timeline, clip.duration_frames),
+                "srcEnable": "all" if clip.audio_enabled else "video",
+            }
+            if clip.audio_enabled:
+                clip_attributes["audioRole"] = "dialogue"
             ET.SubElement(
                 gap,
                 "asset-clip",
-                {
-                    "ref": source_ids[(clip.camera, clip.media_id)],
-                    "lane": str(lane),
-                    "offset": _frame_time(timeline, clip.offset_frames),
-                    "name": clip.media_id,
-                    "start": "0s",
-                    "duration": _frame_time(timeline, clip.duration_frames),
-                    "audioRole": "dialogue",
-                },
+                clip_attributes,
             )
         title = ET.SubElement(
             gap,
@@ -374,6 +377,22 @@ def validate_fcpxml(
         ):
             raise ValueError("TRITRACK_FCPXML_SOURCE_INVALID")
 
+    for gap in root.findall("./library/event/project/sequence/spine/gap"):
+        clips = gap.findall("./asset-clip")
+        if (
+            not clips
+            or sum(clip.attrib.get("srcEnable") == "all" for clip in clips) != 1
+            or any(
+                clip.attrib.get("srcEnable") not in {"all", "video"}
+                or (
+                    (clip.attrib.get("srcEnable") == "all")
+                    != (clip.attrib.get("audioRole") == "dialogue")
+                )
+                for clip in clips
+            )
+        ):
+            raise ValueError("TRITRACK_FCPXML_AUDIO_INVALID")
+
     expected_styles = _style_values(binding)
     style_ids: set[str] = set()
     for definition in root.iter("text-style-def"):
@@ -429,11 +448,56 @@ def publish_fcpxml(
 def _probe_sources(
     camera_a_sources: Sequence[sync_scan.MediaSource],
     camera_b_sources: Sequence[sync_scan.MediaSource],
+    *,
+    profile: Mapping[str, object],
 ) -> list[dict[str, object]]:
+    contracts.validate_contract("compatibility-profile-v1", profile)
+    if dict(profile) != doctor.load_profile(str(profile["profileId"])):
+        raise ValueError("TRITRACK_PROFILE_MISMATCH")
+    frame_duration = str(profile["frameDuration"])
+    numerator, separator, denominator = frame_duration.removesuffix("s").partition("/")
+    if not separator or str(profile["colorSpace"]) != "1-1-1 (Rec. 709)":
+        raise ValueError("TRITRACK_PROFILE_MISMATCH")
+    expected_fields = {
+        "videoStreamCount",
+        "audioStreamCount",
+        "width",
+        "height",
+        "frameRate",
+        "colorSpace",
+        "colorTransfer",
+        "colorPrimaries",
+        "sampleRate",
+        "channels",
+    }
+    expected_values = {
+        "width": int(profile["width"]),
+        "height": int(profile["height"]),
+        "frameRate": f"{denominator}/{numerator}",
+        "colorSpace": "bt709",
+        "colorTransfer": "bt709",
+        "colorPrimaries": "bt709",
+        "sampleRate": str(profile["audioRate"]),
+        "channels": 2,
+    }
     media: list[dict[str, object]] = []
     for camera, sources in (("A", camera_a_sources), ("B", camera_b_sources)):
         for source in sources:
             probed = sync_scan.probe_media(source)
+            compatibility = probed.get("compatibility")
+            if (
+                not isinstance(compatibility, Mapping)
+                or set(compatibility) != expected_fields
+                or not isinstance(compatibility["videoStreamCount"], int)
+                or compatibility["videoStreamCount"] < 1
+                or not isinstance(compatibility["audioStreamCount"], int)
+                or compatibility["audioStreamCount"] < 1
+                or any(
+                    compatibility[field] != value
+                    for field, value in expected_values.items()
+                )
+            ):
+                raise ValueError("TRITRACK_EMIT_SOURCE_PROFILE_MISMATCH")
             media.append(
                 {
                     "camera": camera,
@@ -459,7 +523,15 @@ def emit_and_publish(
 
     process.require_absent_output(output_path)
     sync_map = load_sync_map(sync_map_path)
-    media = _probe_sources(camera_a_sources, camera_b_sources)
+    profile = doctor.load_profile(profile_id)
+    binding = doctor.load_title_binding(binding_id)
+    if sync_map["profileId"] != profile_id:
+        raise ValueError("TRITRACK_PROFILE_MISMATCH")
+    media = _probe_sources(
+        camera_a_sources,
+        camera_b_sources,
+        profile=profile,
+    )
     rendered = render_fcpxml(
         sync_map,
         media,
@@ -467,8 +539,6 @@ def emit_and_publish(
         binding_id=binding_id,
         metadata=metadata,
     )
-    profile = doctor.load_profile(profile_id)
-    binding = doctor.load_title_binding(binding_id)
     publish_fcpxml(
         output_path,
         rendered,

@@ -60,6 +60,27 @@ def media(root: Path) -> list[dict[str, object]]:
     ]
 
 
+def compatible_probe(media_id: str) -> dict[str, object]:
+    return {
+        "id": media_id,
+        "duration_seconds": 1.0,
+        "start": None,
+        "has_audio": True,
+        "compatibility": {
+            "videoStreamCount": 1,
+            "audioStreamCount": 1,
+            "width": 3840,
+            "height": 2160,
+            "frameRate": "30000/1001",
+            "colorSpace": "bt709",
+            "colorTransfer": "bt709",
+            "colorPrimaries": "bt709",
+            "sampleRate": "48000",
+            "channels": 2,
+        },
+    }
+
+
 class FcpxmlRenderingTest(unittest.TestCase):
     def module(self):
         self.assertIsNotNone(
@@ -193,6 +214,29 @@ class FcpxmlRenderingTest(unittest.TestCase):
             )
             self.assertTrue(media_representations[0].attrib["src"].startswith("file:"))
 
+    def test_audio_master_selects_exactly_one_pair_audio_source(self) -> None:
+        module = self.module()
+        payload = sync_payload()
+        payload["pairs"][0]["audioMaster"] = "B"
+        with tempfile.TemporaryDirectory() as temporary:
+            rendered = module.render_fcpxml(
+                payload,
+                media(Path(temporary)),
+                profile_id="uhd-2997-ndf-fcpxml-1.14",
+                binding_id="basic-title-v1",
+                metadata=module.ProjectMetadata("Event", "Project"),
+            )
+
+        clips = ET.fromstring(rendered).findall(
+            "./library/event/project/sequence/spine/gap/asset-clip"
+        )
+        self.assertEqual(
+            [(clip.attrib["name"], clip.attrib.get("srcEnable")) for clip in clips],
+            [("A & 001.MP4", "video"), ("B-001.MP4", "all")],
+        )
+        self.assertNotIn("audioRole", clips[0].attrib)
+        self.assertEqual(clips[1].attrib["audioRole"], "dialogue")
+
     def test_publish_is_atomic_and_never_overwrites_a_race_winner(self) -> None:
         module = self.module()
         profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")
@@ -255,6 +299,51 @@ class FcpxmlRenderingTest(unittest.TestCase):
                 )
             probe.assert_not_called()
             self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_source_probe_must_match_the_closed_public_profile(self) -> None:
+        module = self.module()
+        profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")
+        with tempfile.TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            source_a = sync_scan.MediaSource("A-001.MP4", root_path / "A-001.MP4")
+            source_b = sync_scan.MediaSource("B-001.MP4", root_path / "B-001.MP4")
+            before = copy.deepcopy((source_a, source_b, profile))
+
+            probes = [compatible_probe("A-001.MP4"), compatible_probe("B-001.MP4")]
+            with mock.patch.object(sync_scan, "probe_media", side_effect=probes):
+                normalized = module._probe_sources(
+                    [source_a],
+                    [source_b],
+                    profile=profile,
+                )
+
+            self.assertEqual([item["camera"] for item in normalized], ["A", "B"])
+            self.assertEqual((source_a, source_b, profile), before)
+
+            mismatches = {
+                "width": 1920,
+                "frameRate": "25/1",
+                "colorSpace": None,
+                "sampleRate": "44100",
+                "channels": 1,
+                "audioStreamCount": 0,
+            }
+            for field, value in mismatches.items():
+                with self.subTest(field=field):
+                    changed = compatible_probe("A-001.MP4")
+                    changed["compatibility"][field] = value
+                    with (
+                        mock.patch.object(
+                            sync_scan,
+                            "probe_media",
+                            return_value=changed,
+                        ),
+                        self.assertRaisesRegex(
+                            ValueError,
+                            "TRITRACK_EMIT_SOURCE_PROFILE_MISMATCH",
+                        ),
+                    ):
+                        module._probe_sources([source_a], [], profile=profile)
 
     def test_sync_map_loader_preserves_decimal_timing_and_rejects_drift(self):
         module = self.module()

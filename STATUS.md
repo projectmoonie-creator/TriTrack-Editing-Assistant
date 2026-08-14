@@ -16,10 +16,11 @@ rewrite or merge commit.
 Task 6 implements strict `sync-map-v1` loading, exact public profile and Basic
 Title binding checks, integer-frame pair alignment, deterministic pair-first
 string-out ordering, stable XML identifiers and bytes, XML escaping, source
-immutability, and race-safe absent-output FCPXML publication. The implementation
-retains FCPXML 1.14, UHD 3840×2160, `1001/30000s`, NDF, Rec. 709, stereo, and
-48 kHz profile values. Verification after the last implementation edit passed
-63 tests and Ruff; invented temporary output also passed the declared Final Cut
+immutability, sync-map audio-master selection, source-profile probing, and
+race-safe absent-output FCPXML publication. The implementation retains FCPXML
+1.14, UHD 3840×2160, `1001/30000s`, NDF, Rec. 709, stereo, and 48 kHz profile
+values. Closeout-review verification after the last implementation edit passed
+67 tests and Ruff; invented temporary output also passed the declared Final Cut
 Pro 12.3 FCPXML 1.14 DTD. This is automated DTD evidence, not a claim that a
 Task 6 GUI import or round trip ran.
 

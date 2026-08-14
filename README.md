@@ -93,12 +93,13 @@ venv/bin/tritrack emit \
 
 The source basenames must exactly match the camera-specific media IDs in the
 map, including its unpaired entries. The command validates the public schema,
-profile, and title binding; probes source duration through the bounded process
-boundary; quantizes timing once to integer frames; and creates one absent
-FCPXML path atomically. It does not mutate its inputs or overwrite a race
-winner. The FCPXML contains local source file URIs and should remain under the
-same custody as the source media. Automated FCPXML 1.14 DTD validation does not
-claim that a Final Cut GUI import or round trip ran.
+profile, and title binding; checks the declared source video and audio profile
+through the bounded probe boundary; honors each pair's `audioMaster`; quantizes
+timing once to integer frames; and creates one absent FCPXML path atomically.
+It does not mutate its inputs or overwrite a race winner. The FCPXML contains
+local source file URIs and should remain under the same custody as the source
+media. Automated FCPXML 1.14 DTD validation does not claim that a Final Cut GUI
+import or round trip ran.
 
 ## Eleven-component roadmap
 

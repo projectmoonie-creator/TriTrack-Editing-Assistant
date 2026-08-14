@@ -169,6 +169,38 @@ class CliSmokeTest(unittest.TestCase):
             )
             self.assertEqual(completed.stderr, "")
 
+    def test_emit_rejects_non_object_sync_map_without_a_traceback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sync_map = root / "sync-map.json"
+            sync_map.write_text("[]", encoding="utf-8")
+            completed = self.run_cli_unchecked(
+                "emit",
+                "--camera-a",
+                str(root / "missing-a.MP4"),
+                "--camera-b",
+                str(root / "missing-b.MP4"),
+                "--sync-map",
+                str(sync_map),
+                "--profile",
+                "uhd-2997-ndf-fcpxml-1.14",
+                "--binding",
+                "basic-title-v1",
+                "--event-name",
+                "Invented Event",
+                "--project-name",
+                "Invented String-out",
+                "--output",
+                str(root / "string-out.fcpxml"),
+            )
+
+            self.assertEqual(completed.returncode, 65)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"error": "TRITRACK_EMIT_SYNC_MAP_INVALID"},
+            )
+            self.assertEqual(completed.stderr, "")
+
     def test_sync_rejects_existing_output_before_running_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

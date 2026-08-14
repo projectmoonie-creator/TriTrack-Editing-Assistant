@@ -169,6 +169,26 @@ class StringOutTest(unittest.TestCase):
         )
         self.assertEqual(first, second)
 
+    def test_pair_audio_master_is_preserved_without_mutating_inputs(self) -> None:
+        module = self.module()
+        payload = sync_map()
+        payload["pairs"][0]["audioMaster"] = "B"
+        media = sources()
+        profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")
+        before = copy.deepcopy((payload, media, profile))
+
+        timeline = module.build_string_out(payload, media, profile=profile)
+
+        pair_002 = next(
+            segment for segment in timeline.segments if segment.label == "pair-002"
+        )
+        self.assertEqual(
+            [(clip.camera, clip.audio_enabled) for clip in pair_002.clips],
+            [("A", False), ("B", True)],
+        )
+        self.assertTrue(timeline.segments[2].clips[0].audio_enabled)
+        self.assertEqual((payload, media, profile), before)
+
     def test_schema_drift_unknown_profile_and_source_set_fail_closed(self) -> None:
         module = self.module()
         profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")

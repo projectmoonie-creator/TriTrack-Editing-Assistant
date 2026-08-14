@@ -26,9 +26,13 @@ or another project's tool state.
 - The command consumes one strict `sync-map-v1`, repeatable local camera A/B
   paths, the exact public compatibility profile, the public Basic Title
   binding, and caller-owned event and project names.
-- Source durations are read through the existing bounded `ffprobe` boundary.
-  JSON decimal timing is converted to rational values and quantized once to
-  integer frames; timeline accumulation never uses binary floating point.
+- Source duration, video dimensions, frame rate, Rec. 709 fields, and stereo
+  48 kHz audio fields are read through the existing bounded `ffprobe` boundary
+  and must match the declared profile before emission. JSON decimal timing is
+  converted to rational values and quantized once to integer frames; timeline
+  accumulation never uses binary floating point.
+- Each paired segment enables audio only for the sync map's declared
+  `audioMaster`; unpaired source segments retain their own audio.
 - The command creates one absent FCPXML path atomically. It never rewrites
   source media, the sync map, an existing output, profile data, binding data,
   or caller metadata.

@@ -171,7 +171,7 @@ def _run_emit(arguments: argparse.Namespace) -> int:
             metadata=metadata,
             output_path=arguments.output,
         )
-    except ValueError as error:
+    except (TypeError, ValueError) as error:
         code = str(error).split(":", 1)[0]
         print(json.dumps({"error": code}, ensure_ascii=False))
         if code == "TRITRACK_OUTPUT_EXISTS":

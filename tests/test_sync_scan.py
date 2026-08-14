@@ -165,7 +165,22 @@ class SyncIntegrationTest(unittest.TestCase):
                 "duration": "8.0",
                 "tags": {"creation_time": "2026-08-13T01:00:00Z"},
             },
-            "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 3840,
+                    "height": 2160,
+                    "r_frame_rate": "30000/1001",
+                    "color_space": "bt709",
+                    "color_transfer": "bt709",
+                    "color_primaries": "bt709",
+                },
+                {
+                    "codec_type": "audio",
+                    "sample_rate": "48000",
+                    "channels": 2,
+                },
+            ],
         }
         result = process.ProcessResult(
             status="ok",
@@ -189,6 +204,23 @@ class SyncIntegrationTest(unittest.TestCase):
             self.assertEqual(clip["id"], "A-001.MP4")
             self.assertEqual(clip["duration_seconds"], 8.0)
             self.assertTrue(clip["has_audio"])
+            self.assertEqual(
+                clip["compatibility"],
+                {
+                    "videoStreamCount": 1,
+                    "audioStreamCount": 1,
+                    "width": 3840,
+                    "height": 2160,
+                    "frameRate": "30000/1001",
+                    "colorSpace": "bt709",
+                    "colorTransfer": "bt709",
+                    "colorPrimaries": "bt709",
+                    "sampleRate": "48000",
+                    "channels": 2,
+                },
+            )
+            self.assertIn("width", command[command.index("-show_entries") + 1])
+            self.assertIn("sample_rate", command[command.index("-show_entries") + 1])
             self.assertEqual(source_path.read_bytes(), before)
 
     def test_scan_builds_valid_contract_and_atomically_publishes_absent_output(
