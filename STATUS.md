@@ -3,12 +3,12 @@
 Updated: 2026-08-14
 Project kind: public engine
 Lane: `OSS`
-Release state: local pre-release; no remote, tag, package publication, or
+Release state: public pre-release source; no tag, package publication, or
 tester outreach
 
 ## Current gate
 
-Tasks 1–6 are complete in this local public candidate. Task 6 began from exact
+Tasks 1–6 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -47,6 +47,8 @@ planned and must return non-success until implemented and tested.
 
 ## Custody
 
-The repository intentionally has no remote during this gate. Local commits are
-not off-device backups. Any remote creation, public push, tag, release, tester
-contact, or package publication requires explicit producer approval.
+The public `origin` is
+`https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`.
+Closeout requires verifying that its `main` SHA exactly matches the local green
+candidate, making the GitHub copy the off-device Git backup. Tags, releases,
+pull requests, tester contact, and package publication remain separate gates.

@@ -55,15 +55,20 @@ Do not search for another checkout or silently use a remembered path.
 
 ## Outward actions
 
-Remote creation, public push, releases, tags, tester contact, package
-publication, and application submission each require explicit producer
-approval at the relevant gate. Local implementation never implies outward
-authorization.
+The producer's standing authorization covers closeout review, fix-forward of
+ordinary review findings, fast-forward integration of a fully green candidate,
+and pushing `main` to the existing public `origin` with exact remote-SHA backup
+verification. Do not request that authorization again for the same workflow.
+
+The standing authorization does not cover changing a remote or repository
+visibility, force-push, tags, releases, pull requests, tester contact, package
+publication, or application submission. Those remain separate gates.
 
 ## Close
 
 Before closing, run focused and full tests, lint, the project-boundary tests,
 skill validation, and `git diff --check`; then read back exact status and
 changed files. Update `STATUS.md` only after the coherent package is green.
-Commit only task-owned files. If no remote exists, report that the commit has
-no off-device backup rather than implying durability.
+Commit only task-owned files. A requested implementation includes closeout
+review and fix-forward until ordinary in-scope findings are resolved; stop only
+for a true contract gap, unsafe expansion, or a separately gated action.

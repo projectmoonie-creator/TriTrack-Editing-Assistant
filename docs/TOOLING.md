@@ -62,7 +62,13 @@ The product doctor reads only the declared perpetual application bundle and
 its installed FCPXML DTD. A successful version check does not claim that a GUI
 round trip ran; manual Final Cut evidence remains a separate artifact.
 
-## Local-only custody
+## Public remote custody
 
-No public remote exists at this stage. Do not create one, push, tag, publish,
-or contact testers without the explicit outward-action approval gate.
+- Public `origin`:
+  `https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`
+- After a coherent package is green, the standing authorization permits a
+  fast-forward `main` push to this existing public `origin` and exact remote-SHA
+  verification as the off-device Git backup.
+- Remote changes, visibility changes, force-push, tags, releases, pull requests,
+  tester contact, package publication, and application submission remain
+  separate gates.

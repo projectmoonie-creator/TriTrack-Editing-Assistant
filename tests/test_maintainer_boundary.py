@@ -106,6 +106,15 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("com.apple.FinalCutApp", tooling)
         self.assertIn("default file association", tooling)
 
+    def test_standing_closeout_and_backup_authority_is_explicit(self) -> None:
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for text in (agents, skill):
+            self.assertIn("standing authorization", text)
+            self.assertIn("fix-forward", text)
+            self.assertIn("force-push", text)
+            self.assertIn("existing public `origin`", text)
+
 
 if __name__ == "__main__":
     unittest.main()

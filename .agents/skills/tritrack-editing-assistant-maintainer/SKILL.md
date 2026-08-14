@@ -74,15 +74,23 @@ TriTrack project.
 
 ## Stop at outward actions
 
-Creating a remote, pushing public bytes, tagging or publishing a release,
-contacting testers, and submitting any application are separate outward
-actions. Stop and obtain explicit producer approval at the applicable gate.
-Never manufacture issues, adoption, downloads, or maintenance activity.
+The producer's recorded standing authorization covers closeout review,
+fix-forward of ordinary review findings, fast-forward integration of a fully
+green candidate, and pushing `main` to the existing public `origin` with exact
+remote-SHA backup verification. Do not request that authorization again for the
+same workflow.
+
+Changing a remote or repository visibility, force-push, tags, releases, pull
+requests, tester contact, package publication, and application submission
+remain separate outward gates. Never manufacture issues, adoption, downloads,
+or maintenance activity.
 
 ## Close the OSS lane
 
 Run focused tests, the full suite, lint, skill validation, boundary tests, and
 `git diff --check`. Read back the resulting files and status. Update public
 `STATUS.md` only after the coherent public package is green. Commit only files
-owned by the public task, and report explicitly when the local repository has
-no remote or off-device backup.
+owned by the public task. Treat requested implementation as including closeout
+review and fix-forward until ordinary in-scope findings are resolved; stop only
+for a true public-contract gap, unsafe scope expansion, or a separately gated
+action.
