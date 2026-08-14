@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class CliSmokeTest(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        completed = self.run_cli_unchecked(*args)
+        completed.check_returncode()
+        return completed
+
+    def run_cli_unchecked(self, *args: str) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(ROOT / "src")
         return subprocess.run(
@@ -18,7 +24,7 @@ class CliSmokeTest(unittest.TestCase):
             env=environment,
             text=True,
             capture_output=True,
-            check=True,
+            check=False,
         )
 
     def test_version(self):
@@ -48,7 +54,12 @@ class CliSmokeTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            {component["status"] for component in payload["components"]}, {"planned"}
+            payload["components"][0]["status"],
+            "implemented",
+        )
+        self.assertEqual(
+            {component["status"] for component in payload["components"][1:]},
+            {"planned"},
         )
 
     def test_help_exposes_the_complete_scaffold(self):
@@ -67,6 +78,39 @@ class CliSmokeTest(unittest.TestCase):
             "run",
         ):
             self.assertIn(command, completed.stdout)
+
+    def test_sync_help_exposes_only_the_public_task_5_boundary(self):
+        completed = self.run_cli("sync", "--help")
+        for option in ("--camera-a", "--camera-b", "--profile", "--output"):
+            self.assertIn(option, completed.stdout)
+
+    def test_sync_rejects_existing_output_before_running_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a = root / "A-001.MP4"
+            camera_b = root / "B-001.MP4"
+            camera_a.write_bytes(b"invented-a")
+            camera_b.write_bytes(b"invented-b")
+            output = root / "sync-map.json"
+            output.write_text("sentinel", encoding="utf-8")
+
+            completed = self.run_cli_unchecked(
+                "sync",
+                "--camera-a",
+                str(camera_a),
+                "--camera-b",
+                str(camera_b),
+                "--profile",
+                "uhd-2997-ndf-fcpxml-1.14",
+                "--output",
+                str(output),
+            )
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"error": "TRITRACK_OUTPUT_EXISTS"},
+            )
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
 
 
 if __name__ == "__main__":

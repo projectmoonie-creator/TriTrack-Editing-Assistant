@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from . import doctor as doctor_module
+from . import sync_scan as sync_module
 
 EXIT_OK = 0
 EXIT_USAGE = 64
@@ -21,7 +22,11 @@ EXIT_POLICY = 78
 
 
 COMPONENTS = (
-    {"sourceComponent": "sync_scan.py", "command": "sync", "status": "planned"},
+    {
+        "sourceComponent": "sync_scan.py",
+        "command": "sync",
+        "status": "implemented",
+    },
     {"sourceComponent": "emit_fcpxml.py", "command": "emit", "status": "planned"},
     {
         "sourceComponent": "transcribe_takes.py",
@@ -105,6 +110,37 @@ def _print_doctor(arguments: argparse.Namespace) -> int:
     return EXIT_POLICY
 
 
+def _run_sync(arguments: argparse.Namespace) -> int:
+    camera_a = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_a
+    ]
+    camera_b = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_b
+    ]
+    try:
+        payload = sync_module.synchronize_and_publish(
+            camera_a,
+            camera_b,
+            profile_id=arguments.profile,
+            output_path=arguments.output,
+        )
+    except ValueError as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code in {
+            "TRITRACK_SYNC_PROBE_FAILED",
+            "TRITRACK_SYNC_AUDIO_DECODE_FAILED",
+        }:
+            return EXIT_DEPENDENCY
+        return EXIT_DATA
+
+    if arguments.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -139,8 +175,35 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--whisper-model", type=Path)
     doctor.set_defaults(handler=_print_doctor)
 
+    sync = subparsers.add_parser(
+        "sync",
+        help="discover and audio-verify A/B camera pairs",
+    )
+    sync.add_argument(
+        "--camera-a",
+        action="append",
+        required=True,
+        type=Path,
+        help="local camera-A media path; repeat for each source",
+    )
+    sync.add_argument(
+        "--camera-b",
+        action="append",
+        required=True,
+        type=Path,
+        help="local camera-B media path; repeat for each source",
+    )
+    sync.add_argument("--profile", required=True, help="public compatibility profile id")
+    sync.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent sync-map-v1 JSON path",
+    )
+    sync.add_argument("--json", action="store_true", help="also print the sync map")
+    sync.set_defaults(handler=_run_sync)
+
     planned_commands = {
-        "sync": "discover and audio-verify A/B camera pairs",
         "transcribe": "transcribe local takes",
         "align": "align provider-neutral text to local cue timing",
         "hybrid": "run an explicit optional provider-assisted alignment",

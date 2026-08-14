@@ -92,12 +92,12 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", skill)
         self.assertFalse((ROOT / "skills" / "tritrack-editing-assistant").exists())
 
-    def test_public_status_cold_starts_at_task_5(self) -> None:
+    def test_public_status_advances_to_task_6(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
-        self.assertIn("Tasks 1–4", status)
-        self.assertIn("Task 5", status)
-        self.assertIn("Task 5", roadmap)
+        self.assertIn("Tasks 1–5", status)
+        self.assertIn("Task 6", status)
+        self.assertIn("Task 6", roadmap)
 
     def test_tooling_pins_the_perpetual_final_cut_identity(self) -> None:
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")

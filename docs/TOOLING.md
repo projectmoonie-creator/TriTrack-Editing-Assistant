@@ -12,6 +12,14 @@ or another project's tool state.
 - Skill validation uses the current Codex `skill-creator` validator against
   `.agents/skills/tritrack-editing-assistant-maintainer`.
 
+## Local synchronization
+
+- `tritrack sync --help` is the command authority for Task 5 flags.
+- Media metadata and mono float audio are read through `ffprobe` and `ffmpeg`
+  using the public bounded-process wrapper. No shell command is constructed.
+- The command creates one absent `sync-map-v1` JSON path atomically and never
+  rewrites source media or an existing output path.
+
 ## Final Cut Pro verification target
 
 The current compatibility evidence targets:

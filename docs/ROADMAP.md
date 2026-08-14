@@ -10,11 +10,11 @@ here.
   compatibility doctor, and public Basic Title evidence.
 - Task 4.5: public-native maintainer governance and the three-role skill
   boundary are complete.
+- Task 5: audio-verified A/B synchronization from the reviewed clean-room
+  intake, with strict `sync-map-v1` and no-overwrite publication.
 
 ## Next
 
-- Task 5: extract and harden audio-verified A/B-camera synchronization from a
-  reviewed clean-room intake.
 - Task 6: implement profile-bound FCPXML emission and string-out.
 - Task 7: add local transcription and deterministic fallbacks.
 - Task 8: add deterministic text alignment and the isolated optional provider

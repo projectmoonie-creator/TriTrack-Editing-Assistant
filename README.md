@@ -5,10 +5,11 @@ editable Final Cut Pro interview workflows from local A/B-camera media. It is
 designed for editors working with a terminal-capable agent while keeping story
 decisions with the editor.
 
-> Development scaffold: `0.1.0a0` currently exposes the component registry and
-> the fail-closed `doctor` command. Editing commands are listed as `planned`
-> and deliberately return a non-success status until their implementation and
-> tests land. There is no public release yet.
+> Development scaffold: `0.1.0a0` currently exposes the component registry,
+> the fail-closed `doctor` command, and local audio-verified `sync`. Remaining
+> editing commands are listed as `planned` and deliberately return a
+> non-success status until their implementation and tests land. There is no
+> public release yet.
 
 ## Target alpha compatibility
 
@@ -58,6 +59,22 @@ venv/bin/tritrack doctor \
 The command reports sanitized dependency and compatibility checks. It does not
 claim that a manual Final Cut import occurred.
 
+Run local A/B synchronization with one repeatable flag per source:
+
+```bash
+venv/bin/tritrack sync \
+  --camera-a A-001.MP4 \
+  --camera-a A-002.MP4 \
+  --camera-b B-001.MP4 \
+  --profile uhd-2997-ndf-fcpxml-1.14 \
+  --output results/sync-map.json
+```
+
+The output path and its parent directory must already be absent and present,
+respectively. The command reads local metadata and audio through bounded
+`ffprobe`/`ffmpeg` argv calls, validates `sync-map-v1`, and publishes the map
+atomically without modifying source media or overwriting an existing result.
+
 ## Eleven-component roadmap
 
 The component registry is the machine-readable source for current status:
@@ -68,7 +85,7 @@ tritrack components --json
 
 | # | Component | Public command | Current status |
 | ---: | --- | --- | --- |
-| 1 | `sync_scan.py` | `tritrack sync` | planned |
+| 1 | `sync_scan.py` | `tritrack sync` | implemented |
 | 2 | `emit_fcpxml.py` | `tritrack emit` | planned |
 | 3 | `transcribe_takes.py` | `tritrack transcribe` | planned |
 | 4 | `string_out.py` | `tritrack emit` | planned |
