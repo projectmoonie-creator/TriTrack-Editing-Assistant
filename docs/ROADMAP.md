@@ -18,13 +18,18 @@ here.
 
 ## Next
 
+- Task 6.5: add a self-contained invented-media quickstart from local A/B
+  synchronization through deterministic FCPXML, minimal continuous
+  integration, and public-safe readiness evidence. This supporting slice does
+  not add a twelfth workflow component.
 - Task 7: add local transcription and deterministic fallbacks.
 - Task 8: add deterministic text alignment and the isolated optional provider
   adapter.
 - Task 9: add organizer and paper-edit round trip.
 - Task 10: implement the installed `run` workflow and create the separate
   end-user `skills/tritrack-editing-assistant/SKILL.md`.
-- Task 11: add the invented end-to-end fixture, CI, and privacy/release gates.
+- Task 11: expand the release-grade CI matrix and complete the privacy,
+  provenance, packaging, and release gates.
 - Task 12: freeze and independently review the alpha candidate.
 - Task 13: prove the public engine as the generic authority and define a
   deliberate downstream integration seam.

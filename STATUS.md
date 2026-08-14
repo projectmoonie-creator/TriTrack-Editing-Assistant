@@ -26,9 +26,14 @@ Task 6 GUI import or round trip ran.
 
 ## Next action
 
-Task 7 adds local transcription and deterministic fallbacks. It remains a
-separate public task and must not silently broaden Task 6 compatibility or
-outward-action authority.
+Task 6.5 adds a public, invented, self-contained synchronization-to-FCPXML
+quickstart, minimal continuous integration, and public release-readiness
+evidence without changing the eleven-component registry. Its bounded contract
+and cold-start instructions live in `docs/TASK-6.5-HANDOFF.md`.
+
+Task 7 follows Task 6.5 and adds local transcription and deterministic
+fallbacks. It remains a separate public task and must not silently broaden
+Task 6 compatibility or outward-action authority.
 
 ## Implemented surface
 
@@ -51,5 +56,6 @@ The public `origin` is
 `https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`.
 Closeout requires verifying that its `main` SHA exactly matches the local green
 candidate, making the GitHub copy the off-device Git backup. Tags, releases,
-pull requests, tester contact, and package publication have not yet been
-granted. All grants follow the standing-authorization model in `AGENTS.md`.
+pull requests, tester contact, package publication, and application submission
+have not yet been granted. All grants follow the standing-authorization model
+in `AGENTS.md`.

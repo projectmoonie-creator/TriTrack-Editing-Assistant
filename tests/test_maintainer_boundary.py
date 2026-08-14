@@ -92,12 +92,29 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", skill)
         self.assertFalse((ROOT / "skills" / "tritrack-editing-assistant").exists())
 
-    def test_public_status_advances_to_task_7(self) -> None:
+    def test_public_status_schedules_task_6_5_before_task_7(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
         self.assertIn("Tasks 1–6", status)
-        self.assertIn("Task 7", status)
-        self.assertIn("Task 7", roadmap)
+        self.assertIn("Task 6.5", status)
+        self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
+        self.assertIn("Task 6.5", roadmap)
+        self.assertLess(roadmap.index("Task 6.5"), roadmap.index("Task 7"))
+
+    def test_task_6_5_handoff_is_public_safe_and_bounded(self) -> None:
+        handoff = (ROOT / "docs" / "TASK-6.5-HANDOFF.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "$tritrack-editing-assistant-maintainer OSS 開工，執行 Task 6.5",
+            handoff,
+        )
+        self.assertIn("242e8b5406e92049ce60c654c3c8fca11be4b596", handoff)
+        self.assertIn("codex/task6-5-public-demo-readiness", handoff)
+        self.assertIn("RED", handoff)
+        self.assertIn("GREEN", handoff)
+        self.assertIn("application submission", handoff)
+        self.assertNotIn("/" + "Users" + "/", handoff)
 
     def test_tooling_pins_the_perpetual_final_cut_identity(self) -> None:
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
