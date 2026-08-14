@@ -17,6 +17,10 @@ format follows Keep a Changelog, and releases will use semantic versioning.
 - Profile-bound FCPXML 1.14 emission with deterministic pair-first string-out,
   integer-frame timing, public Basic Title labels, strict input validation,
   XML escaping, stable identifiers, and atomic no-overwrite publication.
+- Public invented-media quickstart through the installed synchronization and
+  emission commands, deterministic repeat-output verification, conditional
+  local FCPXML 1.14 DTD validation, minimal Python CI, and sanitized readiness
+  evidence without changing the eleven-component registry.
 
 ### Fixed
 

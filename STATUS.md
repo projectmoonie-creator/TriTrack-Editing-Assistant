@@ -1,6 +1,6 @@
 # Public maintenance status
 
-Updated: 2026-08-14
+Updated: 2026-08-15
 Project kind: public engine
 Lane: `OSS`
 Release state: public pre-release source; no tag, package publication, or
@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–6 are complete in this public candidate. Task 6 began from exact
+Tasks 1–6.5 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -24,16 +24,24 @@ values. Closeout-review verification after the last implementation edit passed
 Pro 12.3 FCPXML 1.14 DTD. This is automated DTD evidence, not a claim that a
 Task 6 GUI import or round trip ran.
 
+Task 6.5 implementation candidate
+`8dae7719374e4e653130c0830d78dbcb2d687002` adds one public invented-media
+quickstart from installed `sync` through installed `emit`, exact repeat-output
+determinism, strict profile／map／XML checks, conditional local DTD validation,
+minimal Python 3.12／3.13 CI, and a three-choice public entry guide without
+changing the eleven-component registry. Final verification passed 8 focused,
+31 Task 5／6 regression, 77 complete-suite, and 9 boundary tests, plus Ruff,
+compilation, identity, skill, installed CLI, and diff gates. One real invented
+run passed FFmpeg／FFprobe generation, audio pairing, two deterministic emits,
+and the installed FCPXML 1.14 DTD. It did not open Final Cut and makes no GUI
+import or round-trip claim. Sanitized evidence is in
+`docs/TASK-6.5-VERIFICATION.md`.
+
 ## Next action
 
-Task 6.5 adds a public, invented, self-contained synchronization-to-FCPXML
-quickstart, minimal continuous integration, and public release-readiness
-evidence without changing the eleven-component registry. Its bounded contract
-and cold-start instructions live in `docs/TASK-6.5-HANDOFF.md`.
-
-Task 7 follows Task 6.5 and adds local transcription and deterministic
-fallbacks. It remains a separate public task and must not silently broaden
-Task 6 compatibility or outward-action authority.
+Task 7 adds local transcription and deterministic fallbacks. It remains a
+separate public task and must not silently broaden Task 6 compatibility or
+outward-action authority.
 
 ## Implemented surface
 
@@ -45,7 +53,9 @@ Task 6 compatibility or outward-action authority.
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
-  evidence.
+  evidence;
+- public invented-media synchronization-to-FCPXML quickstart with deterministic
+  repeat emission, conditional local DTD verification, and minimal CI.
 
 Editing commands other than `sync`, `emit`, `doctor`, and `components` remain
 planned and must return non-success until implemented and tested.

@@ -15,13 +15,13 @@ here.
 - Task 6: profile-bound FCPXML 1.14 emission and deterministic string-out, with
   integer-frame timing, strict public profile, source-probe and binding checks,
   sync-map audio-master selection, and atomic no-overwrite publication.
+- Task 6.5: self-contained invented-media quickstart through installed
+  synchronization and deterministic FCPXML emission, with minimal CI and
+  public-safe readiness evidence. It remains supporting infrastructure, not a
+  twelfth workflow component.
 
 ## Next
 
-- Task 6.5: add a self-contained invented-media quickstart from local A/B
-  synchronization through deterministic FCPXML, minimal continuous
-  integration, and public-safe readiness evidence. This supporting slice does
-  not add a twelfth workflow component.
 - Task 7: add local transcription and deterministic fallbacks.
 - Task 8: add deterministic text alignment and the isolated optional provider
   adapter.
