@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from . import doctor as doctor_module
+from . import emit_fcpxml as emit_module
 from . import sync_scan as sync_module
 
 EXIT_OK = 0
@@ -27,13 +28,21 @@ COMPONENTS = (
         "command": "sync",
         "status": "implemented",
     },
-    {"sourceComponent": "emit_fcpxml.py", "command": "emit", "status": "planned"},
+    {
+        "sourceComponent": "emit_fcpxml.py",
+        "command": "emit",
+        "status": "implemented",
+    },
     {
         "sourceComponent": "transcribe_takes.py",
         "command": "transcribe",
         "status": "planned",
     },
-    {"sourceComponent": "string_out.py", "command": "emit", "status": "planned"},
+    {
+        "sourceComponent": "string_out.py",
+        "command": "emit",
+        "status": "implemented",
+    },
     {
         "sourceComponent": "hallucination.py",
         "command": "transcribe",
@@ -141,6 +150,40 @@ def _run_sync(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _run_emit(arguments: argparse.Namespace) -> int:
+    camera_a = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_a
+    ]
+    camera_b = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_b
+    ]
+    try:
+        metadata = emit_module.ProjectMetadata(
+            event_name=arguments.event_name,
+            project_name=arguments.project_name,
+        )
+        emit_module.emit_and_publish(
+            camera_a,
+            camera_b,
+            sync_map_path=arguments.sync_map,
+            profile_id=arguments.profile,
+            binding_id=arguments.binding,
+            metadata=metadata,
+            output_path=arguments.output,
+        )
+    except ValueError as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code == "TRITRACK_SYNC_PROBE_FAILED":
+            return EXIT_DEPENDENCY
+        if code == "TRITRACK_PROFILE_UNKNOWN":
+            return EXIT_POLICY
+        return EXIT_DATA
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -203,11 +246,46 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--json", action="store_true", help="also print the sync map")
     sync.set_defaults(handler=_run_sync)
 
+    emit = subparsers.add_parser(
+        "emit",
+        help="emit a profile-bound deterministic Final Cut XML string-out",
+    )
+    emit.add_argument(
+        "--camera-a",
+        action="append",
+        required=True,
+        type=Path,
+        help="local camera-A media path; repeat for each source",
+    )
+    emit.add_argument(
+        "--camera-b",
+        action="append",
+        required=True,
+        type=Path,
+        help="local camera-B media path; repeat for each source",
+    )
+    emit.add_argument(
+        "--sync-map",
+        required=True,
+        type=Path,
+        help="strict sync-map-v1 JSON path",
+    )
+    emit.add_argument("--profile", required=True, help="public compatibility profile id")
+    emit.add_argument("--binding", required=True, help="public title binding id")
+    emit.add_argument("--event-name", required=True, help="caller-owned event name")
+    emit.add_argument("--project-name", required=True, help="caller-owned project name")
+    emit.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent FCPXML path",
+    )
+    emit.set_defaults(handler=_run_emit)
+
     planned_commands = {
         "transcribe": "transcribe local takes",
         "align": "align provider-neutral text to local cue timing",
         "hybrid": "run an explicit optional provider-assisted alignment",
-        "emit": "emit profile-bound Final Cut XML",
         "validate": "validate generated output",
         "organize": "build a validated question-grouped working cut",
         "paper": "export or apply a paper-edit workbook",

@@ -54,12 +54,23 @@ class CliSmokeTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            payload["components"][0]["status"],
-            "implemented",
-        )
-        self.assertEqual(
-            {component["status"] for component in payload["components"][1:]},
-            {"planned"},
+            {
+                component["sourceComponent"]: component["status"]
+                for component in payload["components"]
+            },
+            {
+                "sync_scan.py": "implemented",
+                "emit_fcpxml.py": "implemented",
+                "transcribe_takes.py": "planned",
+                "string_out.py": "implemented",
+                "hallucination.py": "planned",
+                "organizer.py": "planned",
+                "paper_edit.py": "planned",
+                "align_text.py": "planned",
+                "gemini_hybrid.py": "planned",
+                "gemini_transcribe.mjs": "planned",
+                "multicam-sync": "planned",
+            },
         )
 
     def test_help_exposes_the_complete_scaffold(self):
@@ -83,6 +94,80 @@ class CliSmokeTest(unittest.TestCase):
         completed = self.run_cli("sync", "--help")
         for option in ("--camera-a", "--camera-b", "--profile", "--output"):
             self.assertIn(option, completed.stdout)
+
+    def test_emit_help_exposes_only_the_public_task_6_boundary(self):
+        completed = self.run_cli("emit", "--help")
+        for option in (
+            "--camera-a",
+            "--camera-b",
+            "--sync-map",
+            "--profile",
+            "--binding",
+            "--event-name",
+            "--project-name",
+            "--output",
+        ):
+            self.assertIn(option, completed.stdout)
+
+    def test_emit_rejects_existing_output_before_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "string-out.fcpxml"
+            output.write_text("sentinel", encoding="utf-8")
+            completed = self.run_cli_unchecked(
+                "emit",
+                "--camera-a",
+                str(root / "missing-a.MP4"),
+                "--camera-b",
+                str(root / "missing-b.MP4"),
+                "--sync-map",
+                str(root / "missing-sync-map.json"),
+                "--profile",
+                "uhd-2997-ndf-fcpxml-1.14",
+                "--binding",
+                "basic-title-v1",
+                "--event-name",
+                "Invented Event",
+                "--project-name",
+                "Invented String-out",
+                "--output",
+                str(output),
+            )
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"error": "TRITRACK_OUTPUT_EXISTS"},
+            )
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_emit_rejects_invalid_caller_metadata_at_the_cli_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed = self.run_cli_unchecked(
+                "emit",
+                "--camera-a",
+                str(root / "missing-a.MP4"),
+                "--camera-b",
+                str(root / "missing-b.MP4"),
+                "--sync-map",
+                str(root / "missing-sync-map.json"),
+                "--profile",
+                "uhd-2997-ndf-fcpxml-1.14",
+                "--binding",
+                "basic-title-v1",
+                "--event-name",
+                "\n",
+                "--project-name",
+                "Invented String-out",
+                "--output",
+                str(root / "string-out.fcpxml"),
+            )
+            self.assertEqual(completed.returncode, 65)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"error": "TRITRACK_EMIT_METADATA_INVALID"},
+            )
+            self.assertEqual(completed.stderr, "")
 
     def test_sync_rejects_existing_output_before_running_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:

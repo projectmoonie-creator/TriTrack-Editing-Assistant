@@ -6,10 +6,10 @@ designed for editors working with a terminal-capable agent while keeping story
 decisions with the editor.
 
 > Development scaffold: `0.1.0a0` currently exposes the component registry,
-> the fail-closed `doctor` command, and local audio-verified `sync`. Remaining
-> editing commands are listed as `planned` and deliberately return a
-> non-success status until their implementation and tests land. There is no
-> public release yet.
+> the fail-closed `doctor` command, local audio-verified `sync`, and
+> profile-bound deterministic `emit`. Remaining editing commands are listed as
+> `planned` and deliberately return a non-success status until their
+> implementation and tests land. There is no public release yet.
 
 ## Target alpha compatibility
 
@@ -75,6 +75,31 @@ respectively. The command reads local metadata and audio through bounded
 `ffprobe`/`ffmpeg` argv calls, validates `sync-map-v1`, and publishes the map
 atomically without modifying source media or overwriting an existing result.
 
+Emit a deterministic string-out from that strict map with the same repeatable
+source set:
+
+```bash
+venv/bin/tritrack emit \
+  --camera-a A-001.MP4 \
+  --camera-a A-002.MP4 \
+  --camera-b B-001.MP4 \
+  --sync-map results/sync-map.json \
+  --profile uhd-2997-ndf-fcpxml-1.14 \
+  --binding basic-title-v1 \
+  --event-name "Invented Interview" \
+  --project-name "Invented String-out" \
+  --output results/string-out.fcpxml
+```
+
+The source basenames must exactly match the camera-specific media IDs in the
+map, including its unpaired entries. The command validates the public schema,
+profile, and title binding; probes source duration through the bounded process
+boundary; quantizes timing once to integer frames; and creates one absent
+FCPXML path atomically. It does not mutate its inputs or overwrite a race
+winner. The FCPXML contains local source file URIs and should remain under the
+same custody as the source media. Automated FCPXML 1.14 DTD validation does not
+claim that a Final Cut GUI import or round trip ran.
+
 ## Eleven-component roadmap
 
 The component registry is the machine-readable source for current status:
@@ -86,9 +111,9 @@ tritrack components --json
 | # | Component | Public command | Current status |
 | ---: | --- | --- | --- |
 | 1 | `sync_scan.py` | `tritrack sync` | implemented |
-| 2 | `emit_fcpxml.py` | `tritrack emit` | planned |
+| 2 | `emit_fcpxml.py` | `tritrack emit` | implemented |
 | 3 | `transcribe_takes.py` | `tritrack transcribe` | planned |
-| 4 | `string_out.py` | `tritrack emit` | planned |
+| 4 | `string_out.py` | `tritrack emit` | implemented |
 | 5 | `hallucination.py` | `tritrack transcribe` | planned |
 | 6 | `organizer.py` | `tritrack organize` | planned |
 | 7 | `paper_edit.py` | `tritrack paper` | planned |

@@ -12,10 +12,12 @@ here.
   boundary are complete.
 - Task 5: audio-verified A/B synchronization from the reviewed clean-room
   intake, with strict `sync-map-v1` and no-overwrite publication.
+- Task 6: profile-bound FCPXML 1.14 emission and deterministic string-out, with
+  integer-frame timing, strict public profile and binding checks, and atomic
+  no-overwrite publication.
 
 ## Next
 
-- Task 6: implement profile-bound FCPXML emission and string-out.
 - Task 7: add local transcription and deterministic fallbacks.
 - Task 8: add deterministic text alignment and the isolated optional provider
   adapter.

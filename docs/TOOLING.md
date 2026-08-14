@@ -20,6 +20,26 @@ or another project's tool state.
 - The command creates one absent `sync-map-v1` JSON path atomically and never
   rewrites source media or an existing output path.
 
+## Local FCPXML emission
+
+- `tritrack emit --help` is the command authority for Task 6 flags.
+- The command consumes one strict `sync-map-v1`, repeatable local camera A/B
+  paths, the exact public compatibility profile, the public Basic Title
+  binding, and caller-owned event and project names.
+- Source durations are read through the existing bounded `ffprobe` boundary.
+  JSON decimal timing is converted to rational values and quantized once to
+  integer frames; timeline accumulation never uses binary floating point.
+- The command creates one absent FCPXML path atomically. It never rewrites
+  source media, the sync map, an existing output, profile data, binding data,
+  or caller metadata.
+- Generated FCPXML contains caller-supplied local source file URIs and should
+  remain under the same local-media custody as those sources.
+- Automated DTD verification uses the installed FCPXML 1.14 DTD through its
+  percent-encoded `file:` URI. Passing an unescaped application path containing
+  spaces to `xmllint --dtdvalid` does not resolve as a DTD URI.
+- A passing structural and DTD check does not claim that a Final Cut GUI import
+  or round trip ran.
+
 ## Final Cut Pro verification target
 
 The current compatibility evidence targets:
