@@ -106,14 +106,19 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("com.apple.FinalCutApp", tooling)
         self.assertIn("default file association", tooling)
 
-    def test_standing_closeout_and_backup_authority_is_explicit(self) -> None:
+    def test_authorization_is_a_capability_scoped_standing_grant(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         for text in (agents, skill):
-            self.assertIn("standing authorization", text)
-            self.assertIn("fix-forward", text)
-            self.assertIn("force-push", text)
-            self.assertIn("existing public `origin`", text)
+            self.assertIn("capability-scoped standing grant", text)
+            self.assertIn("same target, visibility, scope, and risk", text)
+            self.assertIn("until the producer revokes it", text)
+            self.assertIn("Do not request it again", text)
+            self.assertNotIn("without explicit producer", text)
+
+        roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+        self.assertIn("standing-authorization model", roadmap)
+        self.assertNotIn("Each requires an explicit producer-approved gate", roadmap)
 
 
 if __name__ == "__main__":

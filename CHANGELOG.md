@@ -20,6 +20,8 @@ format follows Keep a Changelog, and releases will use semantic versioning.
 
 ### Fixed
 
+- Replace repeated per-gate permission requests with capability-scoped standing
+  grants that persist for unchanged targets, visibility, scope, and risk.
 - Apply each synchronization pair's declared audio master instead of enabling
   both camera audio tracks.
 - Reject source media that does not expose the declared UHD 29.97, Rec. 709,

@@ -35,10 +35,10 @@ TriTrack project.
 3. Read `AGENTS.md`, `STATUS.md`, `PRODUCT-WISHES.md`, `docs/ROADMAP.md`,
    `docs/TOOLING.md`, and only the task-relevant public files.
 4. Confirm the branch/worktree is isolated and clean enough for the requested
-   task. Never start implementation on `main` without explicit producer
-   authorization.
-5. State the public candidate commit, active task, next action, outward-action
-   gate, and exact verification evidence to be produced.
+   task. Keep implementation off `main`; integrate a fully green candidate
+   only under the recorded standing grant.
+5. State the public candidate commit, active task, next action, applicable
+   standing grants, and exact verification evidence to be produced.
 
 ## Hold the role firewall
 
@@ -72,18 +72,26 @@ TriTrack project.
 - Consult the exact command help before naming flags. A planned command is not
   implemented merely because it appears in the component registry.
 
-## Stop at outward actions
+## Apply standing authorization
 
-The producer's recorded standing authorization covers closeout review,
-fix-forward of ordinary review findings, fast-forward integration of a fully
-green candidate, and pushing `main` to the existing public `origin` with exact
-remote-SHA backup verification. Do not request that authorization again for the
-same workflow.
+Producer authorization is a capability-scoped standing grant. Once a
+capability is explicitly authorized or recorded in the public governance, it
+remains authorized for the same target, visibility, scope, and risk.
+The grant remains effective until the producer revokes it.
+Do not request it again, pause at that gate, or treat a new task as implicit
+revocation.
 
-Changing a remote or repository visibility, force-push, tags, releases, pull
-requests, tester contact, package publication, and application submission
-remain separate outward gates. Never manufacture issues, adoption, downloads,
-or maintenance activity.
+Request a new authorization only for a capability that has never been granted
+or for a material change in target, visibility, scope, or risk. Destructive
+history changes, credential or private-data disclosure, and a different remote
+are material changes rather than repetitions.
+
+The current standing grant covers closeout review, fix-forward of ordinary
+in-scope findings, fast-forward integration of a fully green candidate, and
+pushing `main` to the existing public `origin` with exact remote-SHA backup
+verification. Force-push, tags, releases, pull requests, tester contact,
+package publication, and application submission have not yet been granted.
+Never manufacture issues, adoption, downloads, or maintenance activity.
 
 ## Close the OSS lane
 

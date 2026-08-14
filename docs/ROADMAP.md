@@ -32,5 +32,8 @@ here.
 ## Outward-action boundary
 
 Repository publication, tags, releases, tester contact, and package
-publication are not authorized by completing this roadmap. Each requires an
-explicit producer-approved gate after the local candidate is complete.
+publication are not authorized merely by completing this roadmap. Authorization
+follows the standing-authorization model in `AGENTS.md` and the public
+maintainer skill: once a capability is explicitly granted for the same target,
+visibility, scope, and risk, it remains valid until revoked and must not be
+requested again.

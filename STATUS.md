@@ -51,4 +51,5 @@ The public `origin` is
 `https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`.
 Closeout requires verifying that its `main` SHA exactly matches the local green
 candidate, making the GitHub copy the off-device Git backup. Tags, releases,
-pull requests, tester contact, and package publication remain separate gates.
+pull requests, tester contact, and package publication have not yet been
+granted. All grants follow the standing-authorization model in `AGENTS.md`.

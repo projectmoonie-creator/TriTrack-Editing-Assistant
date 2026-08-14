@@ -19,8 +19,8 @@ the skill's `scripts/check_project_identity.py`. A missing or mismatched
 
 Then read `STATUS.md`, `PRODUCT-WISHES.md`, `docs/ROADMAP.md`,
 `docs/TOOLING.md`, `README.md`, and only the files relevant to the active task.
-State the candidate commit, task, next action, outward-action gate, and planned
-evidence before mutating project state.
+State the candidate commit, task, next action, applicable standing grants, and
+planned evidence before mutating project state.
 
 ## Three-role boundary
 
@@ -39,8 +39,8 @@ Do not search for another checkout or silently use a remembered path.
 
 ## Development rules
 
-- Work in an isolated branch/worktree unless the producer explicitly
-  authorizes `main` work.
+- Work in an isolated branch/worktree. Integrate a fully green candidate to
+  `main` only under the standing grant below.
 - Use test-driven development for behavior changes and preserve the observed
   red/green evidence.
 - Use invented or explicitly cleared fixtures only.
@@ -53,16 +53,24 @@ Do not search for another checkout or silently use a remembered path.
 - Public `STATUS.md` is the only current maintenance status. Public
   `docs/ROADMAP.md` owns the public task sequence.
 
-## Outward actions
+## Authorization model
 
-The producer's standing authorization covers closeout review, fix-forward of
-ordinary review findings, fast-forward integration of a fully green candidate,
-and pushing `main` to the existing public `origin` with exact remote-SHA backup
-verification. Do not request that authorization again for the same workflow.
+Producer authorization is a capability-scoped standing grant. Once a
+capability is explicitly authorized or recorded here, it remains authorized for
+the same target, visibility, scope, and risk until the producer revokes it.
+Do not request it again, pause at that gate, or reinterpret a new task as
+revoking it.
 
-The standing authorization does not cover changing a remote or repository
-visibility, force-push, tags, releases, pull requests, tester contact, package
-publication, or application submission. Those remain separate gates.
+A new authorization is needed only when the capability has never been granted,
+or when the proposed action materially changes the target, visibility, scope,
+or risk. Destructive history changes, credential or private-data disclosure,
+and a different remote are material changes rather than repetitions.
+
+The current standing grant covers closeout review, fix-forward of ordinary
+in-scope findings, fast-forward integration of a fully green candidate, and
+pushing `main` to the existing public `origin` with exact remote-SHA backup
+verification. Force-push, tags, releases, pull requests, tester contact,
+package publication, and application submission have not yet been granted.
 
 ## Close
 

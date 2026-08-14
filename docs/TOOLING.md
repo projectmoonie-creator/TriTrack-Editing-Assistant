@@ -64,11 +64,14 @@ round trip ran; manual Final Cut evidence remains a separate artifact.
 
 ## Public remote custody
 
+- Authorization follows the capability-scoped standing-grant model in
+  `AGENTS.md`; unchanged authorized actions are not re-approved per task.
 - Public `origin`:
   `https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`
 - After a coherent package is green, the standing authorization permits a
   fast-forward `main` push to this existing public `origin` and exact remote-SHA
   verification as the off-device Git backup.
 - Remote changes, visibility changes, force-push, tags, releases, pull requests,
-  tester contact, package publication, and application submission remain
-  separate gates.
+  tester contact, package publication, and application submission have not yet
+  been granted. If later granted for an unchanged scope, that grant persists
+  until revoked.
