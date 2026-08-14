@@ -44,6 +44,35 @@ or another project's tool state.
 - A passing structural and DTD check does not claim that a Final Cut GUI import
   or round trip ran.
 
+## Invented quickstart verification
+
+From an editable development installation, run the public Task 6.5 example
+with one caller-selected output root that does not already exist:
+
+```bash
+venv/bin/python examples/quickstart_demo.py --output .fixture-runs
+```
+
+The example creates all invented sources and results below that root, invokes
+the installed `tritrack components`, `tritrack sync`, and `tritrack emit`
+surfaces through bounded argv-only processes, performs a second emit to an
+absent temporary result and compares exact bytes, then removes only that
+temporary comparison. The retained output is one strict `sync-map-v1`, one
+deterministic FCPXML string-out, and the invented source pair. The output-root
+reservation and both public result writers fail closed without overwrite.
+
+The summary reports `dtdValidation: passed` only when the declared perpetual
+Final Cut FCPXML 1.14 DTD exists locally and `xmllint` accepts the output. On a
+runner without that application it reports `not-available`; this is not DTD or
+GUI evidence. Local Task 6.5 acceptance additionally runs:
+
+```bash
+venv/bin/python -m unittest tests.test_quickstart_demo -v
+venv/bin/python -m unittest discover -s tests -v
+venv/bin/ruff check src tests examples
+venv/bin/python -m compileall -q src tests examples
+```
+
 ## Final Cut Pro verification target
 
 The current compatibility evidence targets:

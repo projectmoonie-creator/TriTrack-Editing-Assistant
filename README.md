@@ -101,6 +101,31 @@ local source file URIs and should remain under the same custody as the source
 media. Automated FCPXML 1.14 DTD validation does not claim that a Final Cut GUI
 import or round trip ran.
 
+## One-minute invented quickstart
+
+After the development installation above, exercise the complete implemented
+path with deterministic invented media and one absent, ignored output root:
+
+```bash
+venv/bin/python examples/quickstart_demo.py --output .fixture-runs
+```
+
+The example generates two four-second UHD 29.97 NDF Rec. 709 clips with stereo
+48 kHz invented audio, calls the installed `tritrack sync` and `tritrack emit`
+surfaces, validates the strict map and profile-bound XML, checks deterministic
+FCPXML bytes, and uses the installed FCPXML 1.14 DTD when the declared Final Cut
+application is available. It prints only a sanitized relative-path summary and
+does not upload or publish anything. The output root must be absent; choose a
+new ignored path for another run.
+
+Choose the narrowest entry point that matches your goal:
+
+1. Use the invented quickstart above to verify the implemented local path.
+2. Use `tritrack sync` then `tritrack emit` with your own local compatible
+   media when you need an editable string-out.
+3. Use `tritrack components --json` to inspect what is implemented before
+   trying later roadmap commands; planned commands still fail closed.
+
 ## Eleven-component roadmap
 
 The component registry is the machine-readable source for current status:
