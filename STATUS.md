@@ -25,7 +25,7 @@ Pro 12.3 FCPXML 1.14 DTD. This is automated DTD evidence, not a claim that a
 Task 6 GUI import or round trip ran.
 
 Task 6.5 implementation candidate
-`8dae7719374e4e653130c0830d78dbcb2d687002` adds one public invented-media
+`0a99fb65979930385a6a267d596f0baa2ea5aaf3` adds one public invented-media
 quickstart from installed `sync` through installed `emit`, exact repeat-output
 determinism, strict profile／map／XML checks, conditional local DTD validation,
 minimal Python 3.12／3.13 CI, and a three-choice public entry guide without
@@ -33,8 +33,11 @@ changing the eleven-component registry. Final verification passed 8 focused,
 31 Task 5／6 regression, 77 complete-suite, and 9 boundary tests, plus Ruff,
 compilation, identity, skill, installed CLI, and diff gates. One real invented
 run passed FFmpeg／FFprobe generation, audio pairing, two deterministic emits,
-and the installed FCPXML 1.14 DTD. It did not open Final Cut and makes no GUI
-import or round-trip claim. Sanitized evidence is in
+and the installed FCPXML 1.14 DTD. GitHub Actions run `31848242516` passed the
+Python 3.12／3.13 matrix at that exact candidate; its Linux jobs skipped the
+Darwin-only real-environment doctor acceptance and made no Final Cut／DTD
+claim. The local run did not open Final Cut and makes no GUI import or
+round-trip claim. Sanitized evidence is in
 `docs/TASK-6.5-VERIFICATION.md`.
 
 ## Next action

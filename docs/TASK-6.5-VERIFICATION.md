@@ -3,7 +3,7 @@
 Date: 2026-08-14
 
 Implementation candidate:
-`8dae7719374e4e653130c0830d78dbcb2d687002`
+`0a99fb65979930385a6a267d596f0baa2ea5aaf3`
 
 Branch: `codex/task6-5-public-demo-readiness`
 
@@ -45,6 +45,15 @@ focused result was 8／8 GREEN.
 - Installed `components --json`, `doctor --help`, `sync --help`, and
   `emit --help`: passed; the registry remained eleven components.
 - `git diff --check`: passed.
+
+The first public CI run reproduced one environment-contract RED: both Linux
+matrix jobs passed 76 tests and failed only the Darwin real-environment doctor
+acceptance because Final Cut and its DTD were correctly absent. The narrow
+fix-forward marked that one acceptance test Darwin-only; all portable doctor
+tests still ran. GitHub Actions run `31848242516` then completed successfully
+for Python 3.12 and 3.13 at exact candidate
+`0a99fb65979930385a6a267d596f0baa2ea5aaf3`. The Linux jobs recorded the local
+acceptance as skipped and made no Final Cut or DTD claim.
 
 ## Real invented quickstart
 
