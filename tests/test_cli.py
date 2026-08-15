@@ -11,6 +11,92 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def write_alignment_inputs(root: Path) -> tuple[Path, Path]:
+    transcript = {
+        "schemaVersion": "tritrack.transcript-bundle/v1",
+        "profileId": "whisper-cpp-cpu-no-fallback-v1",
+        "language": "en",
+        "modelSha256": "3" * 64,
+        "engine": {
+            "name": "whisper-cli",
+            "version": "whisper.cpp version: invented-cli",
+        },
+        "takes": [
+            {
+                "takeId": "Invented.wav",
+                "sourceSha256": "a" * 64,
+                "status": "completed",
+                "cues": [
+                    {
+                        "cueId": "cue-000001",
+                        "startMs": 0,
+                        "endMs": 500,
+                        "text": "Invented private source text.",
+                    }
+                ],
+            }
+        ],
+    }
+    transcript_path = root / "transcript.json"
+    transcript_path.write_text(
+        json.dumps(transcript, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    revision = {
+        "schemaVersion": "tritrack.text-revision/v1",
+        "sourceBundleSha256": hashlib.sha256(transcript_path.read_bytes()).hexdigest(),
+        "language": "en",
+        "takes": [
+            {
+                "takeId": "Invented.wav",
+                "sourceSha256": "a" * 64,
+                "revisions": [
+                    {
+                        "cueId": "cue-000001",
+                        "text": "Invented private revised text.",
+                    }
+                ],
+            }
+        ],
+    }
+    revision_path = root / "revision.json"
+    revision_path.write_text(
+        json.dumps(revision, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return transcript_path, revision_path
+
+
+def write_hybrid_receipt(root: Path, transcript_path: Path) -> Path:
+    receipt = {
+        "schemaVersion": "tritrack.provider-receipt/v1",
+        "provider": "gemini",
+        "operation": "audio-transcription",
+        "sourceBundleSha256": hashlib.sha256(transcript_path.read_bytes()).hexdigest(),
+        "takeId": "Invented.wav",
+        "requestedModel": "gemini-invented-exact",
+        "observedModel": "gemini-invented-exact",
+        "audioSha256": "a" * 64,
+        "requestStatus": "completed",
+        "responseStatus": 200,
+        "upload": {
+            "status": "completed",
+            "serverFileIdSha256": "e" * 64,
+        },
+        "serverFileDeletion": {
+            "attempted": True,
+            "confirmed": True,
+            "statusCode": 200,
+        },
+    }
+    receipt_path = root / "receipt.json"
+    receipt_path.write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return receipt_path
+
+
 class CliSmokeTest(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         completed = self.run_cli_unchecked(*args)
@@ -74,8 +160,8 @@ class CliSmokeTest(unittest.TestCase):
                 "hallucination.py": "implemented",
                 "organizer.py": "planned",
                 "paper_edit.py": "planned",
-                "align_text.py": "planned",
-                "gemini_hybrid.py": "planned",
+                "align_text.py": "implemented",
+                "gemini_hybrid.py": "implemented",
                 "gemini_transcribe.mjs": "planned",
                 "multicam-sync": "planned",
             },
@@ -123,6 +209,144 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn(option, completed.stdout)
         for excluded in ("provider", "upload", "prompt", "fallback"):
             self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_align_help_exposes_only_the_local_cue_addressed_boundary(self):
+        completed = self.run_cli("align", "--help")
+        for option in ("--transcript", "--revision", "--output", "--json"):
+            self.assertIn(option, completed.stdout)
+        for excluded in ("provider", "upload", "prompt", "model", "retime"):
+            self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_align_cli_publishes_and_prints_only_sanitized_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            transcript, revision = write_alignment_inputs(root)
+            output = root / "aligned.json"
+
+            completed = self.run_cli_unchecked(
+                "align",
+                "--transcript",
+                str(transcript),
+                "--revision",
+                str(revision),
+                "--output",
+                str(output),
+                "--json",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.align-summary/v1",
+                    "takeCount": 1,
+                    "cueCount": 1,
+                    "revisedCueCount": 1,
+                    "artifactSha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                },
+            )
+            encoded_summary = json.dumps(summary)
+            self.assertNotIn(str(root), encoded_summary)
+            self.assertNotIn("Invented private", encoded_summary)
+
+    def test_align_rejects_existing_output_before_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "aligned.json"
+            output.write_text("sentinel", encoding="utf-8")
+
+            completed = self.run_cli_unchecked(
+                "align",
+                "--transcript",
+                str(root / "missing-transcript.json"),
+                "--revision",
+                str(root / "missing-revision.json"),
+                "--output",
+                str(output),
+            )
+
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(json.loads(completed.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"})
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_hybrid_help_exposes_only_offline_receipt_validation(self):
+        completed = self.run_cli("hybrid", "--help")
+        for option in (
+            "--transcript",
+            "--proposal",
+            "--receipt",
+            "--model",
+            "--output",
+            "--json",
+        ):
+            self.assertIn(option, completed.stdout)
+        self.assertIn("offline", completed.stdout.lower())
+        self.assertIn("no network", completed.stdout.lower())
+        for excluded in ("api-key", "credential", "fallback", "upload-file"):
+            self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_hybrid_cli_validates_receipt_and_prints_sanitized_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            transcript, revision = write_alignment_inputs(root)
+            receipt = write_hybrid_receipt(root, transcript)
+            output = root / "hybrid.json"
+
+            completed = self.run_cli_unchecked(
+                "hybrid",
+                "--transcript",
+                str(transcript),
+                "--proposal",
+                str(revision),
+                "--receipt",
+                str(receipt),
+                "--model",
+                "gemini-invented-exact",
+                "--output",
+                str(output),
+                "--json",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.align-summary/v1",
+                    "takeCount": 1,
+                    "cueCount": 1,
+                    "revisedCueCount": 1,
+                    "artifactSha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                },
+            )
+            encoded_summary = json.dumps(summary)
+            self.assertNotIn(str(root), encoded_summary)
+            self.assertNotIn("Invented private", encoded_summary)
+
+    def test_hybrid_rejects_existing_output_before_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "hybrid.json"
+            output.write_text("sentinel", encoding="utf-8")
+
+            completed = self.run_cli_unchecked(
+                "hybrid",
+                "--transcript",
+                str(root / "missing-transcript.json"),
+                "--proposal",
+                str(root / "missing-revision.json"),
+                "--receipt",
+                str(root / "missing-receipt.json"),
+                "--model",
+                "gemini-invented-exact",
+                "--output",
+                str(output),
+            )
+
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(json.loads(completed.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"})
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
 
     def test_transcribe_rejects_existing_output_before_reading_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:

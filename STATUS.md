@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–7 are complete in this public candidate. Task 6 began from exact
+Tasks 1–8 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -54,11 +54,27 @@ requested Claude subscription review timed out and remains explicitly
 incomplete, with no retry or fallback. Sanitized evidence is in
 `docs/TASK-7-VERIFICATION.md`.
 
+Task 8 implementation candidate
+`94040df01ded01d43ebc0c3ff00c94675c3bd9a6` adds strict cue-addressed
+`text-revision-v1` promotion into
+provider-neutral `aligned-transcript-v1`, exact-byte source and revision
+binding, immutable take／cue timing, input-change detection, and atomic
+no-overwrite publication. Its optional `hybrid` command validates one existing
+Gemini receipt per revised take, including exact model, bundle／take／audio
+binding, request and upload completion, and confirmed server-file deletion,
+then invokes the same local promotion core. It performs no provider request,
+upload, deletion, subprocess, credential lookup, or network access;
+`gemini_transcribe.mjs` remains planned. Sanitized evidence is in
+`docs/TASK-8-VERIFICATION.md`.
+Local verification passed 43 focused, 126 complete-suite, and 9 boundary
+tests, plus Ruff, compilation, identity, skill, installed CLI, registry, and
+diff gates.
+
 ## Next action
 
-Task 8 adds deterministic text alignment and the isolated optional provider
-adapter. It remains a separate public task and must not silently broaden the
-local Task 7 command or outward-action authority.
+Task 9 adds organizer and paper-edit round trip. It remains a separate public
+task and must not broaden Task 8 into arbitrary full-text alignment, cue
+retiming, or a live provider transport.
 
 ## Implemented surface
 
@@ -69,6 +85,10 @@ local Task 7 command or outward-action authority.
 - profile-bound deterministic string-out and atomic FCPXML 1.14 publication;
 - fixed-profile CPU-only local transcription with strict deterministic bundle
   canonicalization and atomic no-overwrite publication;
+- deterministic cue-addressed text promotion with immutable local timing and
+  exact-byte provenance;
+- optional offline Gemini receipt conformance that shares the local promotion
+  core and performs no network access;
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
@@ -76,9 +96,9 @@ local Task 7 command or outward-action authority.
 - public invented-media synchronization-to-FCPXML quickstart with deterministic
   repeat emission, conditional local DTD verification, and minimal CI.
 
-Editing commands other than `sync`, `transcribe`, `emit`, `doctor`, and
-`components` remain planned and must return non-success until implemented and
-tested.
+`organize`, `paper`, `validate`, and `run` remain planned and must return
+non-success until implemented and tested. The network-capable
+`gemini_transcribe.mjs` component also remains planned.
 
 ## Custody
 

@@ -13,6 +13,8 @@ CONTRACT_NAMES = frozenset(
         "compatibility-profile-v1",
         "sync-map-v1",
         "transcript-bundle-v1",
+        "text-revision-v1",
+        "aligned-transcript-v1",
         "grouping-v1",
         "title-binding-v1",
         "run-manifest-v1",

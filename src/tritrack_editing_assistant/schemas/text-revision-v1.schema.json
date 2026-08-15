@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/text-revision-v1.schema.json",
+  "title": "TriTrack cue-addressed text revision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceBundleSha256", "language", "takes"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.text-revision/v1"},
+    "sourceBundleSha256": {"$ref": "#/$defs/sha256"},
+    "language": {"type": "string", "pattern": "^[a-z]{2,3}$"},
+    "takes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/take"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cueId", "text"],
+      "properties": {
+        "cueId": {"type": "string", "pattern": "^cue-[0-9]{6}$"},
+        "text": {"type": "string", "minLength": 1}
+      }
+    },
+    "take": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takeId", "sourceSha256", "revisions"],
+      "properties": {
+        "takeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\\\r\\n]+$"
+        },
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "revisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/revision"}
+        }
+      }
+    }
+  }
+}

@@ -22,11 +22,12 @@ here.
 - Task 7: fixed-profile CPU-only local whisper.cpp transcription, strict
   provider-neutral cue bundles, deterministic canonicalization and silence
   outcomes, input-change detection, and atomic no-overwrite publication.
+- Task 8: deterministic cue-addressed text promotion with immutable local
+  timing, exact-byte provenance, and an isolated offline Gemini-receipt
+  conformance adapter. No live provider transport is shipped.
 
 ## Next
 
-- Task 8: add deterministic text alignment and the isolated optional provider
-  adapter.
 - Task 9: add organizer and paper-edit round trip.
 - Task 10: implement the installed `run` workflow and create the separate
   end-user `skills/tritrack-editing-assistant/SKILL.md`.

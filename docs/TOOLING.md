@@ -76,6 +76,41 @@ or another project's tool state.
   the same custody as source media. `--json` prints only counts and the bundle
   SHA-256.
 
+## Local text alignment
+
+- `tritrack align --help` is the command authority for the local Task 8 flags.
+- The command consumes one strict `transcript-bundle-v1`, one strict
+  `text-revision-v1` bound to the exact source bytes, and one absent output
+  path. It makes no subprocess or network request.
+- Revisions address existing take and cue IDs. Promotion preserves take IDs,
+  source hashes, status, cue IDs, and integer-millisecond timing. Unknown or
+  duplicate addresses, source or language mismatch, invalid normalized text,
+  and attempts to edit empty takes fail closed.
+- `aligned-transcript-v1` records the exact source-bundle and revision-file
+  SHA-256 values. Inputs are rehashed before atomic publication. Repeating the
+  operation with the same exact inputs produces identical artifact bytes.
+- All three artifacts contain transcript text and remain under the same local
+  custody as the source media. `--json` prints only counts and the aligned
+  artifact SHA-256.
+
+## Offline provider conformance
+
+- `tritrack hybrid --help` is the command authority for the optional Task 8
+  flags. It performs offline validation only and has no network access.
+- The caller supplies the same transcript and revision, one strict
+  `provider-receipt-v1` per revised take, an exact provider model ID, and one
+  absent output path. The command cannot create receipts and reads no
+  credential or environment secret.
+- Every receipt must uniquely bind the exact bundle, revised take, source audio
+  hash, requested and observed Gemini model, completed request and upload, 2xx
+  response, and attempted plus confirmed 2xx server-file deletion. Missing,
+  extra, duplicate, malformed, changed, failed, or privacy-incomplete evidence
+  fails closed before publication.
+- Conformant evidence flows through the same local alignment builder and
+  publisher, so local and offline-hybrid promotion are byte-identical for the
+  same exact transcript and revision files. The live network-capable
+  `gemini_transcribe.mjs` component remains planned.
+
 ## Invented quickstart verification
 
 From an editable development installation, run the public Task 6.5 example

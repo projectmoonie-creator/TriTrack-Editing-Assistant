@@ -103,6 +103,43 @@ VALID_CONTRACTS = {
             },
         ],
     },
+    "text-revision-v1": {
+        "schemaVersion": "tritrack.text-revision/v1",
+        "sourceBundleSha256": "1" * 64,
+        "language": "en",
+        "takes": [
+            {
+                "takeId": "Take-A.wav",
+                "sourceSha256": "2" * 64,
+                "revisions": [
+                    {"cueId": "cue-000001", "text": "Corrected words"}
+                ],
+            }
+        ],
+    },
+    "aligned-transcript-v1": {
+        "schemaVersion": "tritrack.aligned-transcript/v1",
+        "alignmentProfileId": "cue-addressed-v1",
+        "sourceBundleSha256": "1" * 64,
+        "revisionSha256": "3" * 64,
+        "language": "en",
+        "takes": [
+            {
+                "takeId": "Take-A.wav",
+                "sourceSha256": "2" * 64,
+                "status": "completed",
+                "cues": [
+                    {
+                        "cueId": "cue-000001",
+                        "startMs": 0,
+                        "endMs": 500,
+                        "text": "Corrected words",
+                        "disposition": "revised",
+                    }
+                ],
+            }
+        ],
+    },
     "run-manifest-v1": {
         "schemaVersion": "tritrack.run-manifest/v1",
         "toolVersion": "0.1.0a0",
@@ -121,6 +158,8 @@ VALID_CONTRACTS = {
         "schemaVersion": "tritrack.provider-receipt/v1",
         "provider": "gemini",
         "operation": "audio-transcription",
+        "sourceBundleSha256": "1" * 64,
+        "takeId": "Take-A.wav",
         "requestedModel": "gemini-test-model",
         "observedModel": "gemini-test-model",
         "audioSha256": "d" * 64,
@@ -172,6 +211,40 @@ class ContractValidationTest(unittest.TestCase):
                 self.assertEqual(
                     schema["$schema"], "https://json-schema.org/draft/2020-12/schema"
                 )
+
+    def test_task_8_contracts_reject_invalid_state_shapes(self):
+        invalid_cases = []
+
+        revision_without_cues = copy.deepcopy(VALID_CONTRACTS["text-revision-v1"])
+        revision_without_cues["takes"][0]["revisions"] = []
+        invalid_cases.append(("text-revision-v1", revision_without_cues))
+
+        completed_without_cues = copy.deepcopy(
+            VALID_CONTRACTS["aligned-transcript-v1"]
+        )
+        completed_without_cues["takes"][0]["cues"] = []
+        invalid_cases.append(("aligned-transcript-v1", completed_without_cues))
+
+        empty_with_cues = copy.deepcopy(VALID_CONTRACTS["aligned-transcript-v1"])
+        empty_with_cues["takes"][0]["status"] = "empty"
+        invalid_cases.append(("aligned-transcript-v1", empty_with_cues))
+
+        missing_receipt_binding = copy.deepcopy(
+            VALID_CONTRACTS["provider-receipt-v1"]
+        )
+        del missing_receipt_binding["sourceBundleSha256"]
+        invalid_cases.append(("provider-receipt-v1", missing_receipt_binding))
+
+        unsafe_take_id = copy.deepcopy(VALID_CONTRACTS["text-revision-v1"])
+        unsafe_take_id["takes"][0]["takeId"] = "../Take-A.wav"
+        invalid_cases.append(("text-revision-v1", unsafe_take_id))
+
+        for name, payload in invalid_cases:
+            with (
+                self.subTest(name=name, payload=payload),
+                self.assertRaises(ValidationError),
+            ):
+                contracts.validate_contract(name, payload)
 
 
 if __name__ == "__main__":

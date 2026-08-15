@@ -92,15 +92,20 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", skill)
         self.assertFalse((ROOT / "skills" / "tritrack-editing-assistant").exists())
 
-    def test_public_status_records_task_7_and_schedules_task_8(self) -> None:
+    def test_public_status_records_task_8_and_schedules_task_9(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
-        self.assertIn("Tasks 1–7", status)
+        tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
+        self.assertIn("Tasks 1–8", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
         self.assertLess(status.index("Task 7"), status.index("Task 8"))
-        self.assertIn("Task 7", roadmap)
-        self.assertLess(roadmap.index("Task 7"), roadmap.index("Task 8"))
+        self.assertLess(status.index("Task 8"), status.index("Task 9"))
+        self.assertIn("Task 8", roadmap)
+        self.assertLess(roadmap.index("Task 8"), roadmap.index("Task 9"))
+        self.assertIn("tritrack align --help", tooling)
+        self.assertIn("tritrack hybrid --help", tooling)
+        self.assertIn("no network access", tooling)
 
     def test_task_6_5_handoff_is_public_safe_and_bounded(self) -> None:
         handoff = (ROOT / "docs" / "TASK-6.5-HANDOFF.md").read_text(

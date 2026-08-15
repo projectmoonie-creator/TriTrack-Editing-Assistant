@@ -7,8 +7,8 @@ decisions with the editor.
 
 > Development scaffold: `0.1.0a0` currently exposes the component registry,
 > the fail-closed `doctor` command, local audio-verified `sync`, fixed-profile
-> local `transcribe`, and profile-bound deterministic `emit`. Remaining editing
-> commands are listed as
+> local `transcribe`, deterministic cue-addressed `align`, offline receipt-only
+> `hybrid`, and profile-bound deterministic `emit`. Remaining editing commands are listed as
 > `planned` and deliberately return a non-success status until their
 > implementation and tests land. There is no public release yet.
 
@@ -31,9 +31,9 @@ trademark of Apple Inc.
 ## Local-first boundary
 
 The default workflow is intended to operate without a network call or paid
-model. Media must remain local unless an editor later invokes a separately
-documented optional provider adapter with explicit off-device-audio consent,
-their own credential, and an exact provider model. No such provider path is
+model. The implemented optional `hybrid` command only validates existing
+provider receipts offline; it performs no request, upload, deletion,
+subprocess, credential lookup, or network access. No live provider transport is
 operational in this scaffold.
 
 Do not place production clips, transcripts, credentials, private home paths,
@@ -137,6 +137,45 @@ The bundle contains transcript text and source basenames, so keep it under the
 same local custody as the media. `--json` prints only a path-free completion
 summary and bundle hash; it does not print transcript text.
 
+Promote strict cue-addressed revisions without changing source timing:
+
+```bash
+venv/bin/tritrack align \
+  --transcript results/transcript-bundle.json \
+  --revision results/text-revision.json \
+  --output results/aligned-transcript.json \
+  --json
+```
+
+The `text-revision-v1` file binds its changes to the SHA-256 of the exact source
+bundle bytes and addresses existing take and cue IDs. The command preserves
+take IDs, source hashes, status, cue IDs, and integer-millisecond timing;
+unmentioned cues retain their original text. Empty takes cannot be revised.
+The absent output is a deterministic `aligned-transcript-v1` artifact bound to
+both exact input hashes. The source, revision, and aligned artifacts all contain
+transcript text and remain under local-media custody.
+
+Validate already-produced Gemini evidence before promoting the same revision:
+
+```bash
+venv/bin/tritrack hybrid \
+  --transcript results/transcript-bundle.json \
+  --proposal results/text-revision.json \
+  --receipt results/provider-receipt-A-001.json \
+  --model gemini-exact-model-id \
+  --output results/hybrid-aligned-transcript.json \
+  --json
+```
+
+Repeat `--receipt` once per revised take. This command is an offline conformance
+adapter, not a provider client: it makes no network call and cannot create the
+receipts it consumes. Every receipt must bind the exact bundle, take, source
+audio hash, requested and observed model, completed upload and request, 2xx
+response, and attempted plus confirmed 2xx server-file deletion. It then uses
+the same local promotion core as `align`, producing byte-identical output for
+the same transcript and revision bytes. `gemini_transcribe.mjs`, live upload,
+and provider credentials remain unimplemented.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented
@@ -146,7 +185,8 @@ path with deterministic invented media and one absent, ignored output root:
 venv/bin/python examples/quickstart_demo.py --output .fixture-runs
 ```
 
-The example generates two four-second UHD 29.97 NDF Rec. 709 clips with stereo
+The example exercises the implemented synchronization-to-emission path. It
+generates two four-second UHD 29.97 NDF Rec. 709 clips with stereo
 48 kHz invented audio, calls the installed `tritrack sync` and `tritrack emit`
 surfaces, validates the strict map and profile-bound XML, checks deterministic
 FCPXML bytes, and uses the installed FCPXML 1.14 DTD when the declared Final Cut
@@ -160,8 +200,12 @@ Choose the narrowest entry point that matches your goal:
 2. Use `tritrack sync` then `tritrack emit` with your own local compatible
    media when you need an editable string-out.
 3. Use `tritrack transcribe` with a caller-owned local whisper.cpp model when
-   you need the strict local cue bundle for later roadmap stages.
-4. Use `tritrack components --json` to inspect what is implemented before
+   you need the strict local cue bundle.
+4. Use `tritrack align` to promote a strict cue-addressed revision while
+   preserving local cue timing.
+5. Use `tritrack hybrid` only to validate already-produced provider receipts
+   offline before running the same local promotion.
+6. Use `tritrack components --json` to inspect what is implemented before
    trying later roadmap commands; planned commands still fail closed.
 
 ## Eleven-component roadmap
@@ -181,8 +225,8 @@ tritrack components --json
 | 5 | `hallucination.py` | `tritrack transcribe` | implemented |
 | 6 | `organizer.py` | `tritrack organize` | planned |
 | 7 | `paper_edit.py` | `tritrack paper` | planned |
-| 8 | `align_text.py` | `tritrack align` | planned |
-| 9 | `gemini_hybrid.py` | `tritrack hybrid` | planned, optional |
+| 8 | `align_text.py` | `tritrack align` | implemented |
+| 9 | `gemini_hybrid.py` | `tritrack hybrid` | implemented, offline optional |
 | 10 | `gemini_transcribe.mjs` | `tritrack hybrid` | planned, optional |
 | 11 | `multicam-sync` | `tritrack run` | planned |
 

@@ -9,8 +9,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
+from . import align_text as align_module
 from . import doctor as doctor_module
 from . import emit_fcpxml as emit_module
+from . import gemini_hybrid as hybrid_module
 from . import sync_scan as sync_module
 from . import transcribe_takes as transcribe_module
 
@@ -52,11 +54,15 @@ COMPONENTS = (
     },
     {"sourceComponent": "organizer.py", "command": "organize", "status": "planned"},
     {"sourceComponent": "paper_edit.py", "command": "paper", "status": "planned"},
-    {"sourceComponent": "align_text.py", "command": "align", "status": "planned"},
+    {
+        "sourceComponent": "align_text.py",
+        "command": "align",
+        "status": "implemented",
+    },
     {
         "sourceComponent": "gemini_hybrid.py",
         "command": "hybrid",
-        "status": "planned",
+        "status": "implemented",
     },
     {
         "sourceComponent": "gemini_transcribe.mjs",
@@ -230,6 +236,91 @@ def _run_transcribe(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _alignment_summary(
+    payload: dict[str, object], output_path: Path
+) -> dict[str, object]:
+    takes = payload["takes"]
+    assert isinstance(takes, list)
+    cue_count = 0
+    revised_cue_count = 0
+    for take in takes:
+        assert isinstance(take, dict)
+        cues = take["cues"]
+        assert isinstance(cues, list)
+        cue_count += len(cues)
+        revised_cue_count += sum(
+            isinstance(cue, dict) and cue["disposition"] == "revised"
+            for cue in cues
+        )
+    with output_path.open("rb") as stream:
+        artifact_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+    return {
+        "schemaVersion": "tritrack.align-summary/v1",
+        "takeCount": len(takes),
+        "cueCount": cue_count,
+        "revisedCueCount": revised_cue_count,
+        "artifactSha256": artifact_sha256,
+    }
+
+
+def _run_align(arguments: argparse.Namespace) -> int:
+    try:
+        payload = align_module.align_and_publish(
+            arguments.transcript,
+            arguments.revision,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code == "TRITRACK_OUTPUT_PARENT_MISSING":
+            return EXIT_IO
+        return EXIT_DATA
+
+    if arguments.json:
+        print(
+            json.dumps(
+                _alignment_summary(payload, arguments.output),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return EXIT_OK
+
+
+def _run_hybrid(arguments: argparse.Namespace) -> int:
+    try:
+        payload = hybrid_module.hybrid_and_publish(
+            arguments.transcript,
+            arguments.proposal,
+            arguments.receipt,
+            exact_model=arguments.model,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code == "TRITRACK_OUTPUT_PARENT_MISSING":
+            return EXIT_IO
+        if code == "TRITRACK_HYBRID_MODEL_INVALID":
+            return EXIT_USAGE
+        return EXIT_DATA
+
+    if arguments.json:
+        print(
+            json.dumps(
+                _alignment_summary(payload, arguments.output),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -363,9 +454,78 @@ def build_parser() -> argparse.ArgumentParser:
     )
     transcribe.set_defaults(handler=_run_transcribe)
 
+    align = subparsers.add_parser(
+        "align",
+        help="promote local cue-addressed text without changing source timing",
+    )
+    align.add_argument(
+        "--transcript",
+        required=True,
+        type=Path,
+        help="strict transcript-bundle-v1 JSON path",
+    )
+    align.add_argument(
+        "--revision",
+        required=True,
+        type=Path,
+        help="strict text-revision-v1 JSON path",
+    )
+    align.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent aligned-transcript-v1 JSON path",
+    )
+    align.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    align.set_defaults(handler=_run_align)
+
+    hybrid = subparsers.add_parser(
+        "hybrid",
+        help="validate optional provider evidence offline",
+        description="Offline receipt validation only; no network access.",
+    )
+    hybrid.add_argument(
+        "--transcript",
+        required=True,
+        type=Path,
+        help="strict transcript-bundle-v1 JSON path",
+    )
+    hybrid.add_argument(
+        "--proposal",
+        required=True,
+        type=Path,
+        help="strict text-revision-v1 JSON path",
+    )
+    hybrid.add_argument(
+        "--receipt",
+        action="append",
+        required=True,
+        type=Path,
+        help="strict provider-receipt-v1 path; repeat per revised take",
+    )
+    hybrid.add_argument(
+        "--model",
+        required=True,
+        help="exact provider model recorded in every receipt",
+    )
+    hybrid.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent aligned-transcript-v1 JSON path",
+    )
+    hybrid.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    hybrid.set_defaults(handler=_run_hybrid)
+
     planned_commands = {
-        "align": "align provider-neutral text to local cue timing",
-        "hybrid": "run an explicit optional provider-assisted alignment",
         "validate": "validate generated output",
         "organize": "build a validated question-grouped working cut",
         "paper": "export or apply a paper-edit workbook",
