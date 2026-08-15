@@ -122,7 +122,9 @@ or another project's tool state.
 - The workbook has exactly four worksheets: visible `Cues`, `Questions`, and
   `Selections`, plus hidden `_TriTrack`. Hidden state is a usability aid, not a
   security boundary. Formula cells anywhere in the accepted sheets fail
-  closed; formula-looking transcript text is stored as a literal string.
+  closed; cell hyperlinks, external workbook links, macros, merged cells,
+  defined names, and structural drift also fail closed. Formula-looking
+  transcript text is stored as a literal string.
 - `grouping-v1` is exact-byte bound to the aligned authority and contains only
   cue-addressed editor intent. `working-cut-v1` is exact-byte bound to both
   aligned and grouping inputs and copies source hashes and millisecond timing
@@ -133,9 +135,12 @@ or another project's tool state.
   and subsequent apply returns the same grouping bytes.
 - Task 9 performs no network access, provider call, credential lookup, media
   processing, subprocess invocation, FCPXML emission, or Task 10 orchestration.
-- JSON inputs are bounded to 16 MiB and XLSX inputs to 64 MiB. Inputs are
-  rehashed before temporary-file plus hard-link publication; existing outputs
-  and race winners are never overwritten.
+- JSON inputs are bounded to 16 MiB and compressed XLSX inputs to 64 MiB.
+  Workbook ZIP preflight additionally caps 512 members, 256 MiB total expanded
+  bytes, and 128 MiB per member before openpyxl parsing. Worksheet rows and
+  columns are capped from the exact aligned cue count before rectangular cell
+  inspection. Inputs are rehashed before temporary-file plus hard-link
+  publication; existing outputs and race winners are never overwritten.
 
 ## Invented quickstart verification
 

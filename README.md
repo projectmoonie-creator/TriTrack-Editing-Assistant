@@ -190,8 +190,10 @@ Add `--grouping results/grouping.json` to prefill a workbook from existing
 canonical editor intent. The XLSX file is a transport, not an authority. Its
 complete `Cues` reference grid and hidden public-safe manifest bind it to the
 exact aligned bytes. Formula cells, reference/display changes, unexpected
-sheets, macros, external links, merged cells, and structural drift fail closed.
-Formula-looking transcript text is exported as a literal display string.
+sheets, macros, external workbook links, cell hyperlinks, merged cells, and
+structural drift fail closed. Archive expansion and worksheet dimensions are
+bounded before rectangular cell inspection. Formula-looking transcript text is
+exported as a literal display string.
 
 After editing only the `Questions` and `Selections` tables, apply the workbook
 back to strict JSON authority:

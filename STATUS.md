@@ -73,25 +73,29 @@ Gemini's dynamic-model closeout review passed with no findings, test gaps, or
 documentation gaps. The separately requested Claude subscription review timed
 out and remains explicitly incomplete, with no retry or fallback.
 
-Task 9 implementation candidate
-`f4e8074936674407e21bab2928701b4c88e6216c` tightens cue-addressed
+Task 9 post-fix implementation candidate
+`cc813f01176c1a9c8d0a0409b2de112ffb9ca8a5` retains the original
+`f4e8074936674407e21bab2928701b4c88e6216c` cue-addressed
 `grouping-v1`, adds deterministic dual-bound `working-cut-v1` compilation, and
 implements the local `paper export`, `paper apply`, and `organize` surfaces.
 The XLSX workbook is a four-worksheet editor transport, not an authority:
 apply re-derives its complete cue/display grid and public-safe manifest from
-the exact aligned bytes, rejects formulas and structural drift, normalizes
-only editor-authored text, and returns canonical grouping JSON. Task 9 never
+the exact aligned bytes, rejects formulas, hyperlinks, unsafe ZIP expansion,
+extreme worksheet dimensions, and structural drift, normalizes only
+editor-authored text, and returns canonical grouping JSON. Task 9 never
 retimes, rewrites, splits, merges, or deletes aligned cues and performs no
 network, provider, credential, media, subprocess, FCPXML, or orchestration
-operation. Final local verification passed 49 focused, 151 complete-suite,
-and 9 boundary tests, plus Ruff, compilation, identity, skill, installed CLI,
-round-trip, and diff gates. Gemini's dynamic-model closeout review passed with
-no findings. The separate Claude subscription review timed out and remains
-explicitly incomplete, with no retry or fallback. Review-record integration
-candidate `2edb93e515a62e4f26a6d61f1447e5c605892ec2` matched public
-`origin/main`, and GitHub Actions run `31881710301` passed its Python
-3.12／3.13 test, lint, and compile matrix. Sanitized evidence is in
-`docs/TASK-9-VERIFICATION.md`.
+operation. Final post-fix local verification passed 53 focused, 155
+complete-suite, and 9 boundary tests, plus Ruff, compilation, identity, skill,
+installed CLI, round-trip, and diff gates. Both the original and post-fix
+Gemini dynamic-model closeout reviews passed with no findings. Both separate
+Claude subscription reviews timed out and remain explicitly incomplete, with
+no retry or fallback.
+The pre-fix review-record candidate
+`2edb93e515a62e4f26a6d61f1447e5c605892ec2` matched public `origin/main`, and
+GitHub Actions run `31881710301` passed its Python 3.12／3.13 test, lint, and
+compile matrix. Post-fix public custody is recorded after standing-grant
+integration. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
 
 ## Next action
 

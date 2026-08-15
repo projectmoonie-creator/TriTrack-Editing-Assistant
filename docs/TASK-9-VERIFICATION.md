@@ -1,8 +1,11 @@
 # Task 9 verification
 
-Date: 2026-08-15
+Date: 2026-08-16
 
-Candidate implementation: `f4e8074936674407e21bab2928701b4c88e6216c`
+Initial implementation: `f4e8074936674407e21bab2928701b4c88e6216c`
+
+Post-fix implementation candidate:
+`cc813f01176c1a9c8d0a0409b2de112ffb9ca8a5`
 
 ## Public scope proven
 
@@ -39,6 +42,13 @@ orchestration call. All tracked fixtures and tests use invented content.
 - CLI RED: `paper` had no nested commands and both Task 9 components remained
   planned. GREEN exposes the three exact help authorities, stable exit classes,
   sanitized summaries, and an unchanged eleven-component registry.
+- Post-closeout safety RED reproduced accepted cell hyperlinks, unbounded
+  rectangular iteration from an extreme worksheet dimension, missing ZIP
+  expanded-size preflight, and an uncaught openpyxl error for a schema-valid,
+  sorted take ID containing vertical tab. GREEN rejects hyperlinks, caps ZIP
+  members and expanded sizes before openpyxl load, caps worksheet dimensions
+  from the exact cue count before cell iteration, and maps XML-unsafe aligned
+  identity to `TRITRACK_PAPER_ALIGNED_INVALID` without publishing output.
 
 ## Semantic round trips
 
@@ -55,8 +65,9 @@ orchestration call. All tracked fixtures and tests use invented content.
 
 The coherent implementation and governance package passed:
 
-- 49 focused contract, organizer, paper-edit, and CLI tests;
-- 151 complete-suite tests;
+- 53 focused contract, organizer, paper-edit, and CLI tests;
+- 155 complete-suite tests;
+- 9 maintainer-boundary tests;
 - Ruff over `src`, `tests`, and `examples`;
 - Python compilation over `src`, `tests`, and `examples`;
 - project identity with `ok: true`, kind `public-engine`, and lane `OSS`;
@@ -68,8 +79,9 @@ surfaces and the unchanged eleven-component registry. One invented installed
 round trip exported two cues including literal formula-looking display text,
 normalized one question and selection into grouping, compiled one working-cut
 segment, produced equal re-exported logical grids, and returned the same
-grouping bytes from both re-applies. Its grouping SHA-256 was
-`6b6b0736391ca349ea2d3453557c58dc9facb84bbe312f7e2b5f83664ddad145`.
+grouping bytes from both re-applies. The final post-fix installed run produced
+grouping SHA-256
+`b2ad845cb687eeedd5bc2c297035aa36fb314e9e78045a7a722ff7dafedb5446`.
 
 ## Independent closeout review
 
@@ -86,15 +98,29 @@ retried, downgraded, or replaced by a paid credential/API fallback. The
 provider ledgers and local adjudication are preserved under `docs/reviews/`;
 this record does not claim two completed reviews.
 
+The separate post-fix packet has SHA-256
+`f4612b376813ed30e3ef917400c6e0651d9d179174b8b53b250c1574a88a5931`.
+Gemini dynamically requested, observed, and completed
+`gemini-3.7-flash`; it returned `PASS` with no findings, test gaps, or
+documentation gaps. The post-fix Claude Code subscription attempt requested
+the dynamic `opus` capability alias and ended at the wrapper hard timeout.
+Observed and completed models are null, request completion is ambiguous, and
+the attempt remains incomplete without retry, downgrade, paid credential, or
+provider fallback. The exact provider ledgers and local `agree` adjudication
+are preserved under `docs/reviews/`.
+
 ## Public CI and custody
 
-Review-record integration candidate
+The original review-record integration candidate
 `2edb93e515a62e4f26a6d61f1447e5c605892ec2` was fast-forwarded to
 `main` without a merge commit. Local `main`, the remote-tracking ref,
 `git ls-remote`, and the GitHub commits API all returned that exact SHA after
 push. GitHub Actions run `31881710301` then passed both the Python 3.12 and
 Python 3.13 jobs, including test, lint, and compile steps. The jobs make no
 Final Cut GUI, macOS runtime, or DTD claim.
+
+Post-fix public custody is recorded after the standing-grant integration and
+CI run complete; the earlier run above does not cover candidate `cc813f0`.
 
 No Final Cut GUI import, DTD validation, tag, release, pull request, package
 publication, tester contact, or application submission is claimed by Task 9.

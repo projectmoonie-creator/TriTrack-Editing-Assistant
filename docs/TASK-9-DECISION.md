@@ -268,19 +268,22 @@ re-derives and verifies all values from the supplied aligned artifact.
 Workbook parsing uses formulas as formulas (`data_only=False`) and rejects any
 formula cell anywhere in the accepted sheets. It also rejects unexpected or
 missing sheets, merged cells, unexpected defined names, external links,
-macros, malformed cell types, duplicate IDs, duplicate or gapped ordering,
-foreign cue addresses, non-contiguous spans, overlapping assignments,
-noncanonical text, and a manifest or reference-grid mismatch.
+cell hyperlinks, macros, malformed cell types, duplicate IDs, duplicate or
+gapped ordering, foreign cue addresses, non-contiguous spans, overlapping
+assignments, noncanonical text, and a manifest or reference-grid mismatch.
 
 Export writes text cells explicitly as strings and uses text number formats for
 identifiers to reduce spreadsheet coercion. Formula-looking transcript text is
 display-only and must be serialized as a literal string, never as a formula.
 
 Workbook and JSON inputs have independent declared size limits, must be regular
-non-symlink files, and are hashed before and after parsing. Any change before
-publication fails closed. Workbook export and both JSON writers publish only
-to absent paths through the existing temporary-file plus hard-link race
-boundary, with cleanup after success or failure.
+non-symlink files, and are hashed before and after parsing. Workbook ZIP member
+count and expanded sizes are bounded before openpyxl parsing. Worksheet rows
+and columns are capped from the exact aligned cue count before rectangular
+cell inspection. Any change before publication fails closed. Workbook export
+and both JSON writers publish only to absent paths through the existing
+temporary-file plus hard-link race boundary, with cleanup after success or
+failure.
 
 Command summaries contain only schema version, bounded counts, and artifact
 SHA-256. They never print transcript text, question text, notes, filenames, or
