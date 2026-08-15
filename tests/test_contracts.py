@@ -40,24 +40,71 @@ VALID_CONTRACTS = {
     },
     "grouping-v1": {
         "schemaVersion": "tritrack.grouping/v1",
+        "alignedTranscriptSha256": "4" * 64,
         "questions": [
             {
                 "id": "question-001",
                 "question": "What changed?",
+                "order": 1,
                 "answers": [
                     {
-                        "takeId": "take-001",
-                        "startMs": 500,
-                        "endMs": 2500,
+                        "id": "answer-001",
+                        "order": 1,
+                        "takeId": "Take-A.wav",
+                        "startCueId": "cue-000001",
+                        "endCueId": "cue-000002",
+                        "note": "Primary answer",
                     }
                 ],
             }
         ],
         "reserve": [
             {
-                "takeId": "take-002",
+                "id": "reserve-001",
+                "order": 1,
+                "takeId": "Take-B.wav",
+                "startCueId": "cue-000003",
+                "endCueId": "cue-000003",
+                "reason": "Alternate answer",
+            }
+        ],
+    },
+    "working-cut-v1": {
+        "schemaVersion": "tritrack.working-cut/v1",
+        "organizationProfileId": "cue-addressed-question-groups-v1",
+        "alignedTranscriptSha256": "4" * 64,
+        "groupingSha256": "5" * 64,
+        "questions": [
+            {
+                "id": "question-001",
+                "question": "What changed?",
+                "order": 1,
+            }
+        ],
+        "segments": [
+            {
+                "id": "answer-001",
+                "storyOrder": 1,
+                "questionId": "question-001",
+                "takeId": "Take-A.wav",
+                "sourceSha256": "a" * 64,
+                "startCueId": "cue-000001",
+                "endCueId": "cue-000002",
                 "startMs": 0,
-                "endMs": 1000,
+                "endMs": 1200,
+                "note": "Primary answer",
+            }
+        ],
+        "reserve": [
+            {
+                "id": "reserve-001",
+                "order": 1,
+                "takeId": "Take-B.wav",
+                "sourceSha256": "b" * 64,
+                "startCueId": "cue-000003",
+                "endCueId": "cue-000003",
+                "startMs": 2000,
+                "endMs": 2500,
                 "reason": "Alternate answer",
             }
         ],
@@ -238,6 +285,40 @@ class ContractValidationTest(unittest.TestCase):
         unsafe_take_id = copy.deepcopy(VALID_CONTRACTS["text-revision-v1"])
         unsafe_take_id["takes"][0]["takeId"] = "../Take-A.wav"
         invalid_cases.append(("text-revision-v1", unsafe_take_id))
+
+        for name, payload in invalid_cases:
+            with (
+                self.subTest(name=name, payload=payload),
+                self.assertRaises(ValidationError),
+            ):
+                contracts.validate_contract(name, payload)
+
+    def test_task_9_contracts_reject_invalid_state_shapes(self):
+        invalid_cases = []
+
+        missing_binding = copy.deepcopy(VALID_CONTRACTS["grouping-v1"])
+        del missing_binding["alignedTranscriptSha256"]
+        invalid_cases.append(("grouping-v1", missing_binding))
+
+        unsafe_question_id = copy.deepcopy(VALID_CONTRACTS["grouping-v1"])
+        unsafe_question_id["questions"][0]["id"] = "../question"
+        invalid_cases.append(("grouping-v1", unsafe_question_id))
+
+        missing_answer_order = copy.deepcopy(VALID_CONTRACTS["grouping-v1"])
+        del missing_answer_order["questions"][0]["answers"][0]["order"]
+        invalid_cases.append(("grouping-v1", missing_answer_order))
+
+        timing_in_grouping = copy.deepcopy(VALID_CONTRACTS["grouping-v1"])
+        timing_in_grouping["questions"][0]["answers"][0]["startMs"] = 0
+        invalid_cases.append(("grouping-v1", timing_in_grouping))
+
+        text_in_segment = copy.deepcopy(VALID_CONTRACTS["working-cut-v1"])
+        text_in_segment["segments"][0]["text"] = "Not a second authority"
+        invalid_cases.append(("working-cut-v1", text_in_segment))
+
+        wrong_profile = copy.deepcopy(VALID_CONTRACTS["working-cut-v1"])
+        wrong_profile["organizationProfileId"] = "future-profile"
+        invalid_cases.append(("working-cut-v1", wrong_profile))
 
         for name, payload in invalid_cases:
             with (

@@ -1,23 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tritrack.dev/schemas/grouping-v1.schema.json",
-  "title": "TriTrack cue-addressed editorial grouping v1",
+  "$id": "https://tritrack.dev/schemas/working-cut-v1.schema.json",
+  "title": "TriTrack compiled working cut v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "organizationProfileId",
     "alignedTranscriptSha256",
+    "groupingSha256",
     "questions",
+    "segments",
     "reserve"
   ],
   "properties": {
-    "schemaVersion": {"const": "tritrack.grouping/v1"},
+    "schemaVersion": {"const": "tritrack.working-cut/v1"},
+    "organizationProfileId": {
+      "const": "cue-addressed-question-groups-v1"
+    },
     "alignedTranscriptSha256": {"$ref": "#/$defs/sha256"},
+    "groupingSha256": {"$ref": "#/$defs/sha256"},
     "questions": {
       "type": "array",
       "minItems": 1,
       "maxItems": 10000,
       "items": {"$ref": "#/$defs/question"}
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {"$ref": "#/$defs/segment"}
     },
     "reserve": {
       "type": "array",
@@ -40,41 +53,43 @@
       "pattern": "^[^/\\\\\\r\\n]+$"
     },
     "cueId": {"type": "string", "pattern": "^cue-[0-9]{6}$"},
-    "questionText": {"type": "string", "minLength": 1, "maxLength": 500},
+    "editorText": {"type": "string", "minLength": 1, "maxLength": 500},
     "note": {"type": "string", "minLength": 1, "maxLength": 2000},
-    "answerRange": {
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question", "order"],
+      "properties": {
+        "id": {"$ref": "#/$defs/safeId"},
+        "question": {"$ref": "#/$defs/editorText"},
+        "order": {"type": "integer", "minimum": 1}
+      }
+    },
+    "segment": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "id",
-        "order",
+        "storyOrder",
+        "questionId",
         "takeId",
+        "sourceSha256",
         "startCueId",
-        "endCueId"
+        "endCueId",
+        "startMs",
+        "endMs"
       ],
       "properties": {
         "id": {"$ref": "#/$defs/safeId"},
-        "order": {"type": "integer", "minimum": 1},
+        "storyOrder": {"type": "integer", "minimum": 1},
+        "questionId": {"$ref": "#/$defs/safeId"},
         "takeId": {"$ref": "#/$defs/takeId"},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
         "startCueId": {"$ref": "#/$defs/cueId"},
         "endCueId": {"$ref": "#/$defs/cueId"},
+        "startMs": {"type": "integer", "minimum": 0},
+        "endMs": {"type": "integer", "minimum": 1},
         "note": {"$ref": "#/$defs/note"}
-      }
-    },
-    "question": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "question", "order", "answers"],
-      "properties": {
-        "id": {"$ref": "#/$defs/safeId"},
-        "question": {"$ref": "#/$defs/questionText"},
-        "order": {"type": "integer", "minimum": 1},
-        "answers": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 10000,
-          "items": {"$ref": "#/$defs/answerRange"}
-        }
       }
     },
     "reserveRange": {
@@ -84,17 +99,23 @@
         "id",
         "order",
         "takeId",
+        "sourceSha256",
         "startCueId",
         "endCueId",
+        "startMs",
+        "endMs",
         "reason"
       ],
       "properties": {
         "id": {"$ref": "#/$defs/safeId"},
         "order": {"type": "integer", "minimum": 1},
         "takeId": {"$ref": "#/$defs/takeId"},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
         "startCueId": {"$ref": "#/$defs/cueId"},
         "endCueId": {"$ref": "#/$defs/cueId"},
-        "reason": {"$ref": "#/$defs/questionText"},
+        "startMs": {"type": "integer", "minimum": 0},
+        "endMs": {"type": "integer", "minimum": 1},
+        "reason": {"$ref": "#/$defs/editorText"},
         "note": {"$ref": "#/$defs/note"}
       }
     }

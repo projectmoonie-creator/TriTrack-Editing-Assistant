@@ -16,6 +16,7 @@ CONTRACT_NAMES = frozenset(
         "text-revision-v1",
         "aligned-transcript-v1",
         "grouping-v1",
+        "working-cut-v1",
         "title-binding-v1",
         "run-manifest-v1",
         "provider-receipt-v1",
