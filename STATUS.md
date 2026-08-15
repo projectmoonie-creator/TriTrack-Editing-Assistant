@@ -87,7 +87,10 @@ operation. Final local verification passed 49 focused, 151 complete-suite,
 and 9 boundary tests, plus Ruff, compilation, identity, skill, installed CLI,
 round-trip, and diff gates. Gemini's dynamic-model closeout review passed with
 no findings. The separate Claude subscription review timed out and remains
-explicitly incomplete, with no retry or fallback. Sanitized evidence is in
+explicitly incomplete, with no retry or fallback. Review-record integration
+candidate `2edb93e515a62e4f26a6d61f1447e5c605892ec2` matched public
+`origin/main`, and GitHub Actions run `31881710301` passed its Python
+3.12／3.13 test, lint, and compile matrix. Sanitized evidence is in
 `docs/TASK-9-VERIFICATION.md`.
 
 ## Next action

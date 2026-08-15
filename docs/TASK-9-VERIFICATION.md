@@ -86,7 +86,15 @@ retried, downgraded, or replaced by a paid credential/API fallback. The
 provider ledgers and local adjudication are preserved under `docs/reviews/`;
 this record does not claim two completed reviews.
 
-Remote CI and exact remote-main custody are not claimed in this local-evidence
-section; they are recorded only after those separate gates actually complete.
-No Final Cut GUI import, DTD validation, tag, release, package publication,
-tester contact, or application submission is claimed by Task 9.
+## Public CI and custody
+
+Review-record integration candidate
+`2edb93e515a62e4f26a6d61f1447e5c605892ec2` was fast-forwarded to
+`main` without a merge commit. Local `main`, the remote-tracking ref,
+`git ls-remote`, and the GitHub commits API all returned that exact SHA after
+push. GitHub Actions run `31881710301` then passed both the Python 3.12 and
+Python 3.13 jobs, including test, lint, and compile steps. The jobs make no
+Final Cut GUI, macOS runtime, or DTD claim.
+
+No Final Cut GUI import, DTD validation, tag, release, pull request, package
+publication, tester contact, or application submission is claimed by Task 9.
