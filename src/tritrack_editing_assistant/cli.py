@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -11,6 +12,7 @@ from . import __version__
 from . import doctor as doctor_module
 from . import emit_fcpxml as emit_module
 from . import sync_scan as sync_module
+from . import transcribe_takes as transcribe_module
 
 EXIT_OK = 0
 EXIT_USAGE = 64
@@ -36,7 +38,7 @@ COMPONENTS = (
     {
         "sourceComponent": "transcribe_takes.py",
         "command": "transcribe",
-        "status": "planned",
+        "status": "implemented",
     },
     {
         "sourceComponent": "string_out.py",
@@ -46,7 +48,7 @@ COMPONENTS = (
     {
         "sourceComponent": "hallucination.py",
         "command": "transcribe",
-        "status": "planned",
+        "status": "implemented",
     },
     {"sourceComponent": "organizer.py", "command": "organize", "status": "planned"},
     {"sourceComponent": "paper_edit.py", "command": "paper", "status": "planned"},
@@ -184,6 +186,50 @@ def _run_emit(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _run_transcribe(arguments: argparse.Namespace) -> int:
+    try:
+        payload = transcribe_module.transcribe_and_publish(
+            arguments.media,
+            model_path=arguments.model,
+            language=arguments.language,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code == "TRITRACK_OUTPUT_PARENT_MISSING":
+            return EXIT_IO
+        if code in {
+            "TRITRACK_TRANSCRIBE_AUDIO_DECODE_FAILED",
+            "TRITRACK_TRANSCRIBE_ENGINE_FAILED",
+            "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE",
+        }:
+            return EXIT_DEPENDENCY
+        if code in {
+            "TRITRACK_TRANSCRIPT_LANGUAGE_INVALID",
+            "TRITRACK_TRANSCRIPT_MEDIA_REQUIRED",
+        }:
+            return EXIT_USAGE
+        return EXIT_DATA
+
+    if arguments.json:
+        takes = payload["takes"]
+        assert isinstance(takes, list)
+        with arguments.output.open("rb") as stream:
+            bundle_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        summary = {
+            "schemaVersion": "tritrack.transcribe-summary/v1",
+            "takeCount": len(takes),
+            "completedCount": sum(take["status"] == "completed" for take in takes),
+            "emptyCount": sum(take["status"] == "empty" for take in takes),
+            "bundleSha256": bundle_sha256,
+        }
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -282,8 +328,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     emit.set_defaults(handler=_run_emit)
 
+    transcribe = subparsers.add_parser(
+        "transcribe",
+        help="transcribe local media with one fixed local decoding profile",
+    )
+    transcribe.add_argument(
+        "--media",
+        action="append",
+        required=True,
+        type=Path,
+        help="local media path; repeat for each take",
+    )
+    transcribe.add_argument(
+        "--model",
+        required=True,
+        type=Path,
+        help="caller-owned readable local whisper.cpp model",
+    )
+    transcribe.add_argument(
+        "--language",
+        required=True,
+        help="explicit two- or three-letter spoken-language code",
+    )
+    transcribe.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent transcript-bundle-v1 JSON path",
+    )
+    transcribe.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    transcribe.set_defaults(handler=_run_transcribe)
+
     planned_commands = {
-        "transcribe": "transcribe local takes",
         "align": "align provider-neutral text to local cue timing",
         "hybrid": "run an explicit optional provider-assisted alignment",
         "validate": "validate generated output",

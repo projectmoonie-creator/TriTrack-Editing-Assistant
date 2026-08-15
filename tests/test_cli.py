@@ -1,8 +1,10 @@
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -15,9 +17,15 @@ class CliSmokeTest(unittest.TestCase):
         completed.check_returncode()
         return completed
 
-    def run_cli_unchecked(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_cli_unchecked(
+        self,
+        *args: str,
+        environment_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(ROOT / "src")
+        if environment_overrides is not None:
+            environment.update(environment_overrides)
         return subprocess.run(
             [sys.executable, "-m", "tritrack_editing_assistant.cli", *args],
             cwd=ROOT,
@@ -61,9 +69,9 @@ class CliSmokeTest(unittest.TestCase):
             {
                 "sync_scan.py": "implemented",
                 "emit_fcpxml.py": "implemented",
-                "transcribe_takes.py": "planned",
+                "transcribe_takes.py": "implemented",
                 "string_out.py": "implemented",
-                "hallucination.py": "planned",
+                "hallucination.py": "implemented",
                 "organizer.py": "planned",
                 "paper_edit.py": "planned",
                 "align_text.py": "planned",
@@ -108,6 +116,122 @@ class CliSmokeTest(unittest.TestCase):
             "--output",
         ):
             self.assertIn(option, completed.stdout)
+
+    def test_transcribe_help_exposes_only_the_local_task_7_boundary(self):
+        completed = self.run_cli("transcribe", "--help")
+        for option in ("--media", "--model", "--language", "--output", "--json"):
+            self.assertIn(option, completed.stdout)
+        for excluded in ("provider", "upload", "prompt", "fallback"):
+            self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_transcribe_rejects_existing_output_before_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "transcript.json"
+            output.write_text("sentinel", encoding="utf-8")
+            completed = self.run_cli_unchecked(
+                "transcribe",
+                "--media",
+                str(root / "missing.MP4"),
+                "--model",
+                str(root / "missing-model.bin"),
+                "--language",
+                "zh",
+                "--output",
+                str(output),
+            )
+
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(json.loads(completed.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"})
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_transcribe_cli_runs_local_tools_and_prints_only_sanitized_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media = root / "Invented.MP4"
+            model = root / "model.bin"
+            output = root / "transcript.json"
+            media.write_bytes(b"invented-media")
+            model.write_bytes(b"invented-model")
+
+            ffmpeg = root / "ffmpeg"
+            ffmpeg.write_text(
+                "#!/usr/bin/env python3\n"
+                + textwrap.dedent(
+                    """
+                    import sys
+                    import wave
+
+                    with wave.open(sys.argv[-1], "wb") as output:
+                        output.setnchannels(1)
+                        output.setsampwidth(2)
+                        output.setframerate(16000)
+                        output.writeframes(bytes([1, 0]) * 16000)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            ffmpeg.chmod(0o755)
+
+            whisper = root / "whisper-cli"
+            whisper.write_text(
+                "#!/usr/bin/env python3\n"
+                + textwrap.dedent(
+                    """
+                    import json
+                    import sys
+
+                    if "--version" in sys.argv:
+                        print("whisper.cpp version: invented-cli")
+                        raise SystemExit(0)
+                    prefix = sys.argv[sys.argv.index("--output-file") + 1]
+                    payload = {
+                        "result": {"language": "zh"},
+                        "transcription": [
+                            {
+                                "offsets": {"from": 0, "to": 500},
+                                "text": "Invented private transcript text.",
+                            }
+                        ],
+                    }
+                    with open(prefix + ".json", "w", encoding="utf-8") as handle:
+                        json.dump(payload, handle)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            whisper.chmod(0o755)
+            path = str(root) + os.pathsep + os.environ.get("PATH", "")
+
+            completed = self.run_cli_unchecked(
+                "transcribe",
+                "--media",
+                str(media),
+                "--model",
+                str(model),
+                "--language",
+                "zh",
+                "--output",
+                str(output),
+                "--json",
+                environment_overrides={"PATH": path},
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.transcribe-summary/v1",
+                    "takeCount": 1,
+                    "completedCount": 1,
+                    "emptyCount": 0,
+                    "bundleSha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                },
+            )
+            encoded_summary = json.dumps(summary)
+            self.assertNotIn(str(root), encoded_summary)
+            self.assertNotIn("Invented private transcript text", encoded_summary)
 
     def test_emit_rejects_existing_output_before_reading_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:

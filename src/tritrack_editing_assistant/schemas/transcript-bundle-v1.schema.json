@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/transcript-bundle-v1.schema.json",
+  "title": "TriTrack local transcript bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profileId", "language", "modelSha256", "engine", "takes"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.transcript-bundle/v1"},
+    "profileId": {"const": "whisper-cpp-cpu-no-fallback-v1"},
+    "language": {"type": "string", "pattern": "^[a-z]{2,3}$"},
+    "modelSha256": {"$ref": "#/$defs/sha256"},
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "whisper-cli"},
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^/\\\\\\r\\n]+$"
+        }
+      }
+    },
+    "takes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/take"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cueId", "startMs", "endMs", "text"],
+      "properties": {
+        "cueId": {"type": "string", "pattern": "^cue-[0-9]{6}$"},
+        "startMs": {"type": "integer", "minimum": 0},
+        "endMs": {"type": "integer", "minimum": 1},
+        "text": {"type": "string", "minLength": 1}
+      }
+    },
+    "take": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takeId", "sourceSha256", "status", "cues"],
+      "properties": {
+        "takeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\\\r\\n]+$"
+        },
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "status": {"enum": ["completed", "empty"]},
+        "cues": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/cue"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "completed"}}},
+          "then": {"properties": {"cues": {"minItems": 1}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "empty"}}},
+          "then": {"properties": {"cues": {"maxItems": 0}}}
+        }
+      ]
+    }
+  }
+}

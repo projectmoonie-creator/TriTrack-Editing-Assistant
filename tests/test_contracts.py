@@ -72,6 +72,37 @@ VALID_CONTRACTS = {
             {"name": "alignment", "value": "center"},
         ],
     },
+    "transcript-bundle-v1": {
+        "schemaVersion": "tritrack.transcript-bundle/v1",
+        "profileId": "whisper-cpp-cpu-no-fallback-v1",
+        "language": "zh",
+        "modelSha256": "f" * 64,
+        "engine": {
+            "name": "whisper-cli",
+            "version": "whisper.cpp version: 1.9.1",
+        },
+        "takes": [
+            {
+                "takeId": "A-001.MP4",
+                "sourceSha256": "a" * 64,
+                "status": "completed",
+                "cues": [
+                    {
+                        "cueId": "cue-000001",
+                        "startMs": 0,
+                        "endMs": 1250,
+                        "text": "Invented local words.",
+                    }
+                ],
+            },
+            {
+                "takeId": "A-002.MP4",
+                "sourceSha256": "b" * 64,
+                "status": "empty",
+                "cues": [],
+            },
+        ],
+    },
     "run-manifest-v1": {
         "schemaVersion": "tritrack.run-manifest/v1",
         "toolVersion": "0.1.0a0",

@@ -19,10 +19,12 @@ here.
   synchronization and deterministic FCPXML emission, with minimal CI and
   public-safe readiness evidence. It remains supporting infrastructure, not a
   twelfth workflow component.
+- Task 7: fixed-profile CPU-only local whisper.cpp transcription, strict
+  provider-neutral cue bundles, deterministic canonicalization and silence
+  outcomes, input-change detection, and atomic no-overwrite publication.
 
 ## Next
 
-- Task 7: add local transcription and deterministic fallbacks.
 - Task 8: add deterministic text alignment and the isolated optional provider
   adapter.
 - Task 9: add organizer and paper-edit round trip.

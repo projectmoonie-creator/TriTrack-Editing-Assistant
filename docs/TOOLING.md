@@ -44,6 +44,38 @@ or another project's tool state.
 - A passing structural and DTD check does not claim that a Final Cut GUI import
   or round trip ran.
 
+## Local transcription
+
+- `tritrack transcribe --help` is the command authority for Task 7 flags.
+- The caller supplies repeatable local media paths, one readable local
+  whisper.cpp model, an explicit lowercase two- or three-letter language code,
+  and one absent output path. TriTrack does not bundle or download a model.
+- The fixed `whisper-cpp-cpu-no-fallback-v1` profile normalizes each source to
+  temporary mono 16 kHz signed 16-bit PCM through bounded FFmpeg, then invokes
+  `whisper-cli` exactly once with zero temperature, zero temperature increment,
+  engine fallback disabled, and GPU decoding disabled. It sends no prompt,
+  translation request, provider request, or network request.
+- Raw engine JSON is an untrusted temporary side effect with a 16 MiB limit.
+  Only the observed language, integer offsets, and cue text enter the strict
+  canonicalizer. The temporary directory is removed after success or failure.
+- The canonical `transcript-bundle-v1` records the fixed profile ID, sanitized
+  engine version, model SHA-256, source SHA-256, stable basename-scoped take
+  identities, stable cue IDs, and integer-millisecond cue timing. It records no
+  absolute paths, temporary paths, logs, execution duration, or credentials.
+- Input hashes are checked before and after local processing. Any media or
+  model change fails closed. Output publication uses the same absent-path,
+  temporary-file, hard-link race boundary as synchronization and FCPXML output.
+- A final cue may exceed the decoded PCM duration by at most 5,000 ms to match
+  observed whisper.cpp tail padding; only that final end is clipped to the real
+  duration. Other invalid or non-monotonic timing fails closed.
+- Exact `[BLANK_AUDIO]` evidence becomes an empty take only after the normalized
+  PCM has independently been proven byte-zero. Non-silent empty evidence and
+  any text over proven silence fail closed. This is a deterministic outcome
+  rule, not a semantic claim about transcription accuracy.
+- The bundle contains local transcript text and media basenames. Keep it under
+  the same custody as source media. `--json` prints only counts and the bundle
+  SHA-256.
+
 ## Invented quickstart verification
 
 From an editable development installation, run the public Task 6.5 example

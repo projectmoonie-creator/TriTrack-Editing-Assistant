@@ -6,8 +6,9 @@ designed for editors working with a terminal-capable agent while keeping story
 decisions with the editor.
 
 > Development scaffold: `0.1.0a0` currently exposes the component registry,
-> the fail-closed `doctor` command, local audio-verified `sync`, and
-> profile-bound deterministic `emit`. Remaining editing commands are listed as
+> the fail-closed `doctor` command, local audio-verified `sync`, fixed-profile
+> local `transcribe`, and profile-bound deterministic `emit`. Remaining editing
+> commands are listed as
 > `planned` and deliberately return a non-success status until their
 > implementation and tests land. There is no public release yet.
 
@@ -101,6 +102,41 @@ local source file URIs and should remain under the same custody as the source
 media. Automated FCPXML 1.14 DTD validation does not claim that a Final Cut GUI
 import or round trip ran.
 
+Run one fixed local whisper.cpp transcription pass with one repeatable flag per
+source:
+
+```bash
+venv/bin/tritrack transcribe \
+  --media A-001.MP4 \
+  --media A-002.MP4 \
+  --model models/ggml-model.bin \
+  --language zh \
+  --output results/transcript-bundle.json \
+  --json
+```
+
+The model is caller-owned and is never bundled or downloaded by TriTrack. The
+command normalizes each source to temporary mono 16 kHz PCM, runs the installed
+`whisper-cli` once per take with the fixed
+`whisper-cpp-cpu-no-fallback-v1` profile, and creates one absent strict
+`transcript-bundle-v1` path atomically. Media basenames must be unique and the
+two- or three-letter language code must be explicit. CPU-only decoding removes
+the local GPU backend as a profile variable; it does not claim bit-identical
+inference across engine versions, models, or machines.
+
+Recognized cues are NFC-normalized, single-spaced, ordered, and bounded to
+integer milliseconds. A bounded final whisper.cpp timestamp pad is clipped to
+the real PCM duration. Exact digital silence may produce an empty take; the
+observed `[BLANK_AUDIO]` engine sentinel is discarded only after the PCM has
+independently been proven all-zero. Non-silent empty output, text over proven
+silence, malformed timing, leaked control tokens, or repeated structural
+artifacts fail closed without publishing. No retry ladder, prompt, translation,
+provider call, upload, or network access is part of this command.
+
+The bundle contains transcript text and source basenames, so keep it under the
+same local custody as the media. `--json` prints only a path-free completion
+summary and bundle hash; it does not print transcript text.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented
@@ -123,7 +159,9 @@ Choose the narrowest entry point that matches your goal:
 1. Use the invented quickstart above to verify the implemented local path.
 2. Use `tritrack sync` then `tritrack emit` with your own local compatible
    media when you need an editable string-out.
-3. Use `tritrack components --json` to inspect what is implemented before
+3. Use `tritrack transcribe` with a caller-owned local whisper.cpp model when
+   you need the strict local cue bundle for later roadmap stages.
+4. Use `tritrack components --json` to inspect what is implemented before
    trying later roadmap commands; planned commands still fail closed.
 
 ## Eleven-component roadmap
@@ -138,9 +176,9 @@ tritrack components --json
 | ---: | --- | --- | --- |
 | 1 | `sync_scan.py` | `tritrack sync` | implemented |
 | 2 | `emit_fcpxml.py` | `tritrack emit` | implemented |
-| 3 | `transcribe_takes.py` | `tritrack transcribe` | planned |
+| 3 | `transcribe_takes.py` | `tritrack transcribe` | implemented |
 | 4 | `string_out.py` | `tritrack emit` | implemented |
-| 5 | `hallucination.py` | `tritrack transcribe` | planned |
+| 5 | `hallucination.py` | `tritrack transcribe` | implemented |
 | 6 | `organizer.py` | `tritrack organize` | planned |
 | 7 | `paper_edit.py` | `tritrack paper` | planned |
 | 8 | `align_text.py` | `tritrack align` | planned |

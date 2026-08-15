@@ -21,6 +21,10 @@ format follows Keep a Changelog, and releases will use semantic versioning.
   emission commands, deterministic repeat-output verification, conditional
   local FCPXML 1.14 DTD validation, minimal Python CI, and sanitized readiness
   evidence without changing the eleven-component registry.
+- Fixed-profile CPU-only local whisper.cpp transcription with strict
+  `transcript-bundle-v1`, model/source hash provenance, deterministic cue
+  canonicalization and silence outcomes, structural artifact guards, input
+  change detection, bounded temporary evidence, and atomic no-overwrite output.
 
 ### Fixed
 
