@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–6.5 are complete in this public candidate. Task 6 began from exact
+Tasks 1–7 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -40,11 +40,25 @@ claim. The local run did not open Final Cut and makes no GUI import or
 round-trip claim. Sanitized evidence is in
 `docs/TASK-6.5-VERIFICATION.md`.
 
+Task 7 implementation candidate
+`60811a7af117a6dfd70d470513676d87db0922bb` adds fixed-profile CPU-only local
+whisper.cpp transcription, strict `transcript-bundle-v1` publication,
+deterministic cue canonicalization and silence outcomes, full-batch input
+change detection, and atomic no-overwrite output. Final verification passed 37
+focused, 100 complete-suite, and 9 boundary tests, plus Ruff, compilation,
+identity, skill, installed CLI, schema, real-engine determinism, privacy, and
+diff gates. Real invented speech produced byte-identical bundles in two runs;
+independently proven digital silence produced an empty zero-cue take. Gemini's
+dynamic-model closeout review passed with no findings. The separately
+requested Claude subscription review timed out and remains explicitly
+incomplete, with no retry or fallback. Sanitized evidence is in
+`docs/TASK-7-VERIFICATION.md`.
+
 ## Next action
 
-Task 7 adds local transcription and deterministic fallbacks. It remains a
-separate public task and must not silently broaden Task 6 compatibility or
-outward-action authority.
+Task 8 adds deterministic text alignment and the isolated optional provider
+adapter. It remains a separate public task and must not silently broaden the
+local Task 7 command or outward-action authority.
 
 ## Implemented surface
 
@@ -53,6 +67,8 @@ outward-action authority.
 - bounded argv-only subprocess execution and sanitized receipts;
 - audio-verified A/B synchronization with atomic `sync-map-v1` publication;
 - profile-bound deterministic string-out and atomic FCPXML 1.14 publication;
+- fixed-profile CPU-only local transcription with strict deterministic bundle
+  canonicalization and atomic no-overwrite publication;
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
@@ -60,8 +76,9 @@ outward-action authority.
 - public invented-media synchronization-to-FCPXML quickstart with deterministic
   repeat emission, conditional local DTD verification, and minimal CI.
 
-Editing commands other than `sync`, `emit`, `doctor`, and `components` remain
-planned and must return non-success until implemented and tested.
+Editing commands other than `sync`, `transcribe`, `emit`, `doctor`, and
+`components` remain planned and must return non-success until implemented and
+tested.
 
 ## Custody
 

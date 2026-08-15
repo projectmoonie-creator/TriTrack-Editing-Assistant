@@ -92,14 +92,15 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", skill)
         self.assertFalse((ROOT / "skills" / "tritrack-editing-assistant").exists())
 
-    def test_public_status_schedules_task_6_5_before_task_7(self) -> None:
+    def test_public_status_records_task_7_and_schedules_task_8(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
-        self.assertIn("Tasks 1–6", status)
+        self.assertIn("Tasks 1–7", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
-        self.assertIn("Task 6.5", roadmap)
-        self.assertLess(roadmap.index("Task 6.5"), roadmap.index("Task 7"))
+        self.assertLess(status.index("Task 7"), status.index("Task 8"))
+        self.assertIn("Task 7", roadmap)
+        self.assertLess(roadmap.index("Task 7"), roadmap.index("Task 8"))
 
     def test_task_6_5_handoff_is_public_safe_and_bounded(self) -> None:
         handoff = (ROOT / "docs" / "TASK-6.5-HANDOFF.md").read_text(
