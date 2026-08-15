@@ -3,9 +3,9 @@
 Date: 2026-08-15
 
 Implementation candidate:
-`94040df01ded01d43ebc0c3ff00c94675c3bd9a6`
+`4cc25b5248fe67a7cce656f0e810976f18565c16`
 
-Branch: `codex/task8-text-alignment`
+Branch: `codex/task8-text-alignment-recovery`
 
 This report records sanitized, invented-content evidence for deterministic
 cue-addressed text promotion and offline provider-receipt conformance. It
@@ -86,9 +86,36 @@ fallback.
 
 ## Closeout review
 
-The frozen-candidate closeout review and any ordinary fix-forward are recorded
-after the documentation candidate is committed. No review completion is
-claimed in this pre-review record.
+One 118,478-byte frozen public packet at SHA-256
+`77643160c1c7b902faf052243443a910a45098f9e71aebc23299e272fd079df8`
+contained the exact Task 7 base-to-candidate patch, implemented contract,
+non-goals, and verification evidence. Its frozen candidate was
+`5b7ce4e6ad50d5451159363caa36b1d9acc5dfba`.
+
+After the operating system's file-provider permission made the original local
+checkout inaccessible, the candidate was recovered from that frozen patch on
+the exact Task 7 base. The extracted reviewed patch and the recovery commit's
+base-to-candidate diff compared byte-for-byte equal; both had SHA-256
+`1f385980f195ea44bfe99d10fb6a5b12de76344f7b72d1710cde67dbb8c79d07`.
+All automated gates above were rerun successfully in the recovery checkout.
+
+- Gemini REST review used the dynamic
+  `highest-capability-generally-released-at-execution` policy. Requested,
+  observed, and completed model were all `gemini-3.7-flash`; usage was 34,916
+  input and 119 output tokens. Result: `PASS` with no findings, test gaps, or
+  documentation gaps. It also confirmed the candidate stays inside Task 8
+  Option A and contains no network-capable provider transport.
+- Claude subscription review requested the dynamic `opus` capability alias
+  through the approved subscription-only wrapper. Attempt
+  `b35fb467-7046-424d-816e-dd497096f170` ended incomplete with
+  `claude-timeout`; observed and completed model are null and
+  `modelRequestSent` is unknown. It produced no usable finding and was not
+  retried, downgraded, relabeled, or routed to API／PAYG／extra-usage fallback.
+
+The completed Gemini review supplies the external closeout finding set; the
+Claude lane remains explicitly incomplete rather than being counted as a
+second completed review. Local adjudication checked the reviewed source,
+tests, and behavior and found no action item or fix-forward change.
 
 ## Public boundary
 

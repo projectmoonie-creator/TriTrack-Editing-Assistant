@@ -55,7 +55,7 @@ incomplete, with no retry or fallback. Sanitized evidence is in
 `docs/TASK-7-VERIFICATION.md`.
 
 Task 8 implementation candidate
-`94040df01ded01d43ebc0c3ff00c94675c3bd9a6` adds strict cue-addressed
+`4cc25b5248fe67a7cce656f0e810976f18565c16` adds strict cue-addressed
 `text-revision-v1` promotion into
 provider-neutral `aligned-transcript-v1`, exact-byte source and revision
 binding, immutable take／cue timing, input-change detection, and atomic
@@ -69,6 +69,9 @@ upload, deletion, subprocess, credential lookup, or network access;
 Local verification passed 43 focused, 126 complete-suite, and 9 boundary
 tests, plus Ruff, compilation, identity, skill, installed CLI, registry, and
 diff gates.
+Gemini's dynamic-model closeout review passed with no findings, test gaps, or
+documentation gaps. The separately requested Claude subscription review timed
+out and remains explicitly incomplete, with no retry or fallback.
 
 ## Next action
 
