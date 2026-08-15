@@ -83,7 +83,12 @@ the exact aligned bytes, rejects formulas and structural drift, normalizes
 only editor-authored text, and returns canonical grouping JSON. Task 9 never
 retimes, rewrites, splits, merges, or deletes aligned cues and performs no
 network, provider, credential, media, subprocess, FCPXML, or orchestration
-operation. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
+operation. Final local verification passed 49 focused, 151 complete-suite,
+and 9 boundary tests, plus Ruff, compilation, identity, skill, installed CLI,
+round-trip, and diff gates. Gemini's dynamic-model closeout review passed with
+no findings. The separate Claude subscription review timed out and remains
+explicitly incomplete, with no retry or fallback. Sanitized evidence is in
+`docs/TASK-9-VERIFICATION.md`.
 
 ## Next action
 

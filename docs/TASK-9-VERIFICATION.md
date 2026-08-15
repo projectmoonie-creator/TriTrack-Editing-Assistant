@@ -71,8 +71,22 @@ segment, produced equal re-exported logical grids, and returned the same
 grouping bytes from both re-applies. Its grouping SHA-256 was
 `6b6b0736391ca349ea2d3453557c58dc9facb84bbe312f7e2b5f83664ddad145`.
 
-Independent closeout review, remote CI, and exact remote-main custody are not
-claimed in this local-evidence section; they are recorded only after those
-separate gates actually complete. No Final Cut GUI import, DTD validation,
-tag, release, package publication, tester contact, or application submission
-is claimed by Task 9.
+## Independent closeout review
+
+The frozen full-diff packet has SHA-256
+`4c764db444dd2df246f3cc86ec03cc710e650013ec9981825c19cd25d8122630`.
+Gemini dynamically requested, observed, and completed
+`gemini-3.7-flash`; it returned `PASS` with no findings, test gaps, or
+documentation gaps across all seven requested dimensions.
+
+The separate Claude Code subscription lane requested the dynamic `opus`
+capability alias but hit its hard timeout. Its observed and completed model
+fields are null and its result remains explicitly incomplete. It was not
+retried, downgraded, or replaced by a paid credential/API fallback. The
+provider ledgers and local adjudication are preserved under `docs/reviews/`;
+this record does not claim two completed reviews.
+
+Remote CI and exact remote-main custody are not claimed in this local-evidence
+section; they are recorded only after those separate gates actually complete.
+No Final Cut GUI import, DTD validation, tag, release, package publication,
+tester contact, or application submission is claimed by Task 9.
