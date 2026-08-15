@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import stat
+import tempfile
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from jsonschema import ValidationError
 
 from . import hallucination
 from .contracts import validate_contract
+from .process import require_absent_output
 
 ORGANIZATION_PROFILE_ID = "cue-addressed-question-groups-v1"
 QUESTION_TEXT_LIMIT = 500
 NOTE_TEXT_LIMIT = 2000
+_JSON_LIMIT_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -37,6 +44,15 @@ class IndexedTake:
 class AlignedIndex:
     takes: Mapping[str, IndexedTake]
     completed_take_order: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LoadedJsonArtifact:
+    path: Path
+    payload: object
+    encoded: bytes
+    sha256: str
+    invalid_code: str
 
 
 def _validate_contract(name: str, payload: object, code: str) -> None:
@@ -382,3 +398,123 @@ def encode_working_cut(payload: object) -> bytes:
     """Return canonical bytes for one strict working cut."""
 
     return _encode_contract("working-cut-v1", payload)
+
+
+def _read_regular_bytes(path: Path, invalid_code: str) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as error:
+        raise ValueError("TRITRACK_ORGANIZER_INPUT_UNREADABLE") from error
+    except OSError as error:
+        raise ValueError(invalid_code) from error
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or not 0 < metadata.st_size <= _JSON_LIMIT_BYTES
+        ):
+            raise ValueError(invalid_code)
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            encoded = stream.read(_JSON_LIMIT_BYTES + 1)
+        if len(encoded) > _JSON_LIMIT_BYTES:
+            raise ValueError(invalid_code)
+        return encoded
+    except OSError as error:
+        raise ValueError(invalid_code) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _load_json_artifact(
+    path: Path,
+    *,
+    contract: str,
+    invalid_code: str,
+) -> LoadedJsonArtifact:
+    selected = Path(path)
+    encoded = _read_regular_bytes(selected, invalid_code)
+    try:
+        payload = json.loads(encoded.decode("utf-8", errors="strict"))
+        validate_contract(contract, payload)
+    except (UnicodeError, json.JSONDecodeError, ValidationError) as error:
+        raise ValueError(invalid_code) from error
+    return LoadedJsonArtifact(
+        path=selected,
+        payload=payload,
+        encoded=encoded,
+        sha256=hashlib.sha256(encoded).hexdigest(),
+        invalid_code=invalid_code,
+    )
+
+
+def _verify_artifact_unchanged(artifact: LoadedJsonArtifact) -> None:
+    try:
+        encoded = _read_regular_bytes(artifact.path, artifact.invalid_code)
+    except ValueError as error:
+        raise ValueError("TRITRACK_ORGANIZER_INPUT_CHANGED") from error
+    if hashlib.sha256(encoded).hexdigest() != artifact.sha256:
+        raise ValueError("TRITRACK_ORGANIZER_INPUT_CHANGED")
+
+
+def _publish_working_cut(payload: object, output_path: Path) -> None:
+    destination = require_absent_output(output_path)
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    encoded = encode_working_cut(payload)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary_path, destination)
+        except FileExistsError as error:
+            raise ValueError("TRITRACK_OUTPUT_EXISTS") from error
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def organize_and_publish(
+    aligned_path: Path,
+    grouping_path: Path,
+    *,
+    output_path: Path,
+) -> dict[str, object]:
+    """Compile exact local inputs and atomically publish a working cut."""
+
+    destination = require_absent_output(output_path)
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    aligned = _load_json_artifact(
+        aligned_path,
+        contract="aligned-transcript-v1",
+        invalid_code="TRITRACK_ORGANIZER_ALIGNED_INVALID",
+    )
+    grouping = _load_json_artifact(
+        grouping_path,
+        contract="grouping-v1",
+        invalid_code="TRITRACK_ORGANIZER_GROUPING_INVALID",
+    )
+    if grouping.encoded != encode_grouping(grouping.payload):
+        raise ValueError("TRITRACK_ORGANIZER_GROUPING_NONCANONICAL")
+    working_cut = build_working_cut(
+        aligned.payload,
+        grouping.payload,
+        aligned_sha256=aligned.sha256,
+        grouping_sha256=grouping.sha256,
+    )
+    _verify_artifact_unchanged(aligned)
+    _verify_artifact_unchanged(grouping)
+    _publish_working_cut(working_cut, destination)
+    return working_cut

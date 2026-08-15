@@ -158,7 +158,7 @@ class CliSmokeTest(unittest.TestCase):
                 "transcribe_takes.py": "implemented",
                 "string_out.py": "implemented",
                 "hallucination.py": "implemented",
-                "organizer.py": "planned",
+                "organizer.py": "implemented",
                 "paper_edit.py": "planned",
                 "align_text.py": "implemented",
                 "gemini_hybrid.py": "implemented",
@@ -269,6 +269,109 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 73)
             self.assertEqual(json.loads(completed.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"})
             self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_organize_help_exposes_only_the_local_cue_addressed_boundary(self):
+        completed = self.run_cli("organize", "--help")
+        for option in ("--aligned", "--grouping", "--output", "--json"):
+            self.assertIn(option, completed.stdout)
+        for excluded in ("provider", "upload", "model", "retime", "fcpxml"):
+            self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_organize_cli_publishes_only_a_sanitized_summary(self):
+        from tests.task9_fixtures import invented_aligned, invented_grouping
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned = root / "aligned.json"
+            grouping = root / "grouping.json"
+            output = root / "working-cut.json"
+            aligned.write_text(
+                json.dumps(
+                    invented_aligned(), ensure_ascii=False, indent=2, sort_keys=True
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            grouping_payload = invented_grouping()
+            grouping_payload["alignedTranscriptSha256"] = hashlib.sha256(
+                aligned.read_bytes()
+            ).hexdigest()
+            grouping.write_text(
+                json.dumps(
+                    grouping_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            completed = self.run_cli_unchecked(
+                "organize",
+                "--aligned",
+                str(aligned),
+                "--grouping",
+                str(grouping),
+                "--output",
+                str(output),
+                "--json",
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.organize-summary/v1",
+                    "questionCount": 2,
+                    "segmentCount": 2,
+                    "reserveCount": 1,
+                    "artifactSha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                },
+            )
+            encoded = json.dumps(summary)
+            self.assertNotIn(str(root), encoded)
+            self.assertNotIn("What changed", encoded)
+
+    def test_organize_rejects_existing_output_before_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "working-cut.json"
+            output.write_text("sentinel", encoding="utf-8")
+            completed = self.run_cli_unchecked(
+                "organize",
+                "--aligned",
+                str(root / "missing-aligned.json"),
+                "--grouping",
+                str(root / "missing-grouping.json"),
+                "--output",
+                str(output),
+            )
+            self.assertEqual(completed.returncode, 73)
+            self.assertEqual(
+                json.loads(completed.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"}
+            )
+            self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+    def test_organize_maps_missing_input_to_io_without_traceback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed = self.run_cli_unchecked(
+                "organize",
+                "--aligned",
+                str(root / "missing-aligned.json"),
+                "--grouping",
+                str(root / "missing-grouping.json"),
+                "--output",
+                str(root / "working-cut.json"),
+            )
+            self.assertEqual(completed.returncode, 74)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"error": "TRITRACK_ORGANIZER_INPUT_UNREADABLE"},
+            )
+            self.assertNotIn("Traceback", completed.stderr)
 
     def test_hybrid_help_exposes_only_offline_receipt_validation(self):
         completed = self.run_cli("hybrid", "--help")

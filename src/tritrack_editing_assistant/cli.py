@@ -13,6 +13,7 @@ from . import align_text as align_module
 from . import doctor as doctor_module
 from . import emit_fcpxml as emit_module
 from . import gemini_hybrid as hybrid_module
+from . import organizer as organizer_module
 from . import sync_scan as sync_module
 from . import transcribe_takes as transcribe_module
 
@@ -52,7 +53,11 @@ COMPONENTS = (
         "command": "transcribe",
         "status": "implemented",
     },
-    {"sourceComponent": "organizer.py", "command": "organize", "status": "planned"},
+    {
+        "sourceComponent": "organizer.py",
+        "command": "organize",
+        "status": "implemented",
+    },
     {"sourceComponent": "paper_edit.py", "command": "paper", "status": "planned"},
     {
         "sourceComponent": "align_text.py",
@@ -321,6 +326,50 @@ def _run_hybrid(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _run_organize(arguments: argparse.Namespace) -> int:
+    try:
+        payload = organizer_module.organize_and_publish(
+            arguments.aligned,
+            arguments.grouping,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        if code == "TRITRACK_OUTPUT_EXISTS":
+            return EXIT_OUTPUT_EXISTS
+        if code in {
+            "TRITRACK_OUTPUT_PARENT_MISSING",
+            "TRITRACK_ORGANIZER_INPUT_UNREADABLE",
+        }:
+            return EXIT_IO
+        return EXIT_DATA
+
+    if arguments.json:
+        questions = payload["questions"]
+        segments = payload["segments"]
+        reserve = payload["reserve"]
+        assert isinstance(questions, list)
+        assert isinstance(segments, list)
+        assert isinstance(reserve, list)
+        with arguments.output.open("rb") as stream:
+            artifact_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        print(
+            json.dumps(
+                {
+                    "schemaVersion": "tritrack.organize-summary/v1",
+                    "questionCount": len(questions),
+                    "segmentCount": len(segments),
+                    "reserveCount": len(reserve),
+                    "artifactSha256": artifact_sha256,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -525,9 +574,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hybrid.set_defaults(handler=_run_hybrid)
 
+    organize = subparsers.add_parser(
+        "organize",
+        help="compile cue-addressed grouping into a working cut",
+    )
+    organize.add_argument(
+        "--aligned",
+        required=True,
+        type=Path,
+        help="strict aligned-transcript-v1 JSON path",
+    )
+    organize.add_argument(
+        "--grouping",
+        required=True,
+        type=Path,
+        help="strict grouping-v1 JSON path",
+    )
+    organize.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent working-cut-v1 JSON path",
+    )
+    organize.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    organize.set_defaults(handler=_run_organize)
+
     planned_commands = {
         "validate": "validate generated output",
-        "organize": "build a validated question-grouped working cut",
         "paper": "export or apply a paper-edit workbook",
         "run": "orchestrate the complete local workflow",
     }
