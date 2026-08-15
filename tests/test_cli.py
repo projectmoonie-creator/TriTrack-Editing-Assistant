@@ -159,7 +159,7 @@ class CliSmokeTest(unittest.TestCase):
                 "string_out.py": "implemented",
                 "hallucination.py": "implemented",
                 "organizer.py": "implemented",
-                "paper_edit.py": "planned",
+                "paper_edit.py": "implemented",
                 "align_text.py": "implemented",
                 "gemini_hybrid.py": "implemented",
                 "gemini_transcribe.mjs": "planned",
@@ -372,6 +372,149 @@ class CliSmokeTest(unittest.TestCase):
                 {"error": "TRITRACK_ORGANIZER_INPUT_UNREADABLE"},
             )
             self.assertNotIn("Traceback", completed.stderr)
+
+    def test_paper_help_exposes_exact_nested_local_commands(self):
+        paper = self.run_cli("paper", "--help")
+        self.assertIn("export", paper.stdout)
+        self.assertIn("apply", paper.stdout)
+
+        export = self.run_cli("paper", "export", "--help")
+        for option in ("--aligned", "--grouping", "--output", "--json"):
+            self.assertIn(option, export.stdout)
+        self.assertNotIn("--workbook", export.stdout)
+
+        apply = self.run_cli("paper", "apply", "--help")
+        for option in ("--aligned", "--workbook", "--output", "--json"):
+            self.assertIn(option, apply.stdout)
+        self.assertNotIn("--grouping", apply.stdout)
+        for completed in (paper, export, apply):
+            for excluded in ("provider", "upload", "model", "retime", "fcpxml"):
+                self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_paper_export_and_apply_print_only_sanitized_summaries(self):
+        from openpyxl import load_workbook
+
+        from tests.task9_fixtures import invented_aligned
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned = root / "aligned.json"
+            workbook = root / "paper.xlsx"
+            grouping = root / "grouping.json"
+            aligned.write_text(
+                json.dumps(
+                    invented_aligned(), ensure_ascii=False, indent=2, sort_keys=True
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            exported = self.run_cli_unchecked(
+                "paper",
+                "export",
+                "--aligned",
+                str(aligned),
+                "--output",
+                str(workbook),
+                "--json",
+            )
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            export_summary = json.loads(exported.stdout)
+            self.assertEqual(
+                export_summary,
+                {
+                    "schemaVersion": "tritrack.paper-export-summary/v1",
+                    "cueCount": 4,
+                    "questionCount": 0,
+                    "selectionCount": 0,
+                    "artifactSha256": hashlib.sha256(
+                        workbook.read_bytes()
+                    ).hexdigest(),
+                },
+            )
+
+            editable = load_workbook(workbook, data_only=False)
+            editable["Questions"].append(
+                ["question-001", "  Invented   question?  ", 1]
+            )
+            editable["Selections"].append(
+                [
+                    "ANSWER",
+                    "answer-001",
+                    "question-001",
+                    1,
+                    "A.wav",
+                    "cue-000001",
+                    "cue-000001",
+                    None,
+                    None,
+                ]
+            )
+            editable.save(workbook)
+
+            applied = self.run_cli_unchecked(
+                "paper",
+                "apply",
+                "--aligned",
+                str(aligned),
+                "--workbook",
+                str(workbook),
+                "--output",
+                str(grouping),
+                "--json",
+            )
+            self.assertEqual(applied.returncode, 0, applied.stderr)
+            apply_summary = json.loads(applied.stdout)
+            self.assertEqual(
+                apply_summary,
+                {
+                    "schemaVersion": "tritrack.paper-apply-summary/v1",
+                    "questionCount": 1,
+                    "answerCount": 1,
+                    "reserveCount": 0,
+                    "artifactSha256": hashlib.sha256(
+                        grouping.read_bytes()
+                    ).hexdigest(),
+                },
+            )
+            summaries = json.dumps([export_summary, apply_summary])
+            self.assertNotIn(str(root), summaries)
+            self.assertNotIn("Invented question", summaries)
+
+    def test_paper_cli_maps_output_and_input_failures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "paper.xlsx"
+            output.write_text("winner", encoding="utf-8")
+            exists = self.run_cli_unchecked(
+                "paper",
+                "export",
+                "--aligned",
+                str(root / "missing.json"),
+                "--output",
+                str(output),
+            )
+            self.assertEqual(exists.returncode, 73)
+            self.assertEqual(
+                json.loads(exists.stdout), {"error": "TRITRACK_OUTPUT_EXISTS"}
+            )
+
+            missing = self.run_cli_unchecked(
+                "paper",
+                "apply",
+                "--aligned",
+                str(root / "missing.json"),
+                "--workbook",
+                str(root / "missing.xlsx"),
+                "--output",
+                str(root / "grouping.json"),
+            )
+            self.assertEqual(missing.returncode, 74)
+            self.assertEqual(
+                json.loads(missing.stdout),
+                {"error": "TRITRACK_PAPER_INPUT_UNREADABLE"},
+            )
+            self.assertNotIn("Traceback", missing.stderr)
 
     def test_hybrid_help_exposes_only_offline_receipt_validation(self):
         completed = self.run_cli("hybrid", "--help")

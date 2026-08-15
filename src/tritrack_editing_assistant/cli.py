@@ -14,6 +14,7 @@ from . import doctor as doctor_module
 from . import emit_fcpxml as emit_module
 from . import gemini_hybrid as hybrid_module
 from . import organizer as organizer_module
+from . import paper_edit as paper_module
 from . import sync_scan as sync_module
 from . import transcribe_takes as transcribe_module
 
@@ -58,7 +59,11 @@ COMPONENTS = (
         "command": "organize",
         "status": "implemented",
     },
-    {"sourceComponent": "paper_edit.py", "command": "paper", "status": "planned"},
+    {
+        "sourceComponent": "paper_edit.py",
+        "command": "paper",
+        "status": "implemented",
+    },
     {
         "sourceComponent": "align_text.py",
         "command": "align",
@@ -370,6 +375,86 @@ def _run_organize(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _paper_error_exit(code: str) -> int:
+    if code == "TRITRACK_OUTPUT_EXISTS":
+        return EXIT_OUTPUT_EXISTS
+    if code in {
+        "TRITRACK_OUTPUT_PARENT_MISSING",
+        "TRITRACK_PAPER_INPUT_UNREADABLE",
+    }:
+        return EXIT_IO
+    return EXIT_DATA
+
+
+def _output_sha256(output_path: Path) -> str:
+    with output_path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _run_paper_export(arguments: argparse.Namespace) -> int:
+    try:
+        summary = paper_module.export_workbook(
+            arguments.aligned,
+            grouping_path=arguments.grouping,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _paper_error_exit(code)
+    if arguments.json:
+        print(
+            json.dumps(
+                {
+                    "schemaVersion": "tritrack.paper-export-summary/v1",
+                    **summary,
+                    "artifactSha256": _output_sha256(arguments.output),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return EXIT_OK
+
+
+def _run_paper_apply(arguments: argparse.Namespace) -> int:
+    try:
+        grouping = paper_module.apply_workbook(
+            arguments.aligned,
+            arguments.workbook,
+            output_path=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _paper_error_exit(code)
+    if arguments.json:
+        questions = grouping["questions"]
+        reserve = grouping["reserve"]
+        assert isinstance(questions, list)
+        assert isinstance(reserve, list)
+        answer_count = 0
+        for question in questions:
+            assert isinstance(question, dict)
+            answers = question["answers"]
+            assert isinstance(answers, list)
+            answer_count += len(answers)
+        print(
+            json.dumps(
+                {
+                    "schemaVersion": "tritrack.paper-apply-summary/v1",
+                    "questionCount": len(questions),
+                    "answerCount": answer_count,
+                    "reserveCount": len(reserve),
+                    "artifactSha256": _output_sha256(arguments.output),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -603,9 +688,73 @@ def build_parser() -> argparse.ArgumentParser:
     )
     organize.set_defaults(handler=_run_organize)
 
+    paper = subparsers.add_parser(
+        "paper",
+        help="export or apply a cue-addressed paper-edit workbook",
+    )
+    paper_subparsers = paper.add_subparsers(
+        dest="paper_command",
+        required=True,
+    )
+    paper_export = paper_subparsers.add_parser(
+        "export",
+        help="export an editor-facing workbook",
+    )
+    paper_export.add_argument(
+        "--aligned",
+        required=True,
+        type=Path,
+        help="strict aligned-transcript-v1 JSON path",
+    )
+    paper_export.add_argument(
+        "--grouping",
+        type=Path,
+        help="optional strict grouping-v1 JSON path to prefill",
+    )
+    paper_export.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent paper-workbook-v1 XLSX path",
+    )
+    paper_export.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    paper_export.set_defaults(handler=_run_paper_export)
+
+    paper_apply = paper_subparsers.add_parser(
+        "apply",
+        help="apply a strict workbook to grouping authority",
+    )
+    paper_apply.add_argument(
+        "--aligned",
+        required=True,
+        type=Path,
+        help="strict aligned-transcript-v1 JSON path",
+    )
+    paper_apply.add_argument(
+        "--workbook",
+        required=True,
+        type=Path,
+        help="strict paper-workbook-v1 XLSX path",
+    )
+    paper_apply.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="create an absent grouping-v1 JSON path",
+    )
+    paper_apply.add_argument(
+        "--json",
+        action="store_true",
+        help="print only a sanitized completion summary",
+    )
+    paper_apply.set_defaults(handler=_run_paper_apply)
+
     planned_commands = {
         "validate": "validate generated output",
-        "paper": "export or apply a paper-edit workbook",
         "run": "orchestrate the complete local workflow",
     }
     for name, help_text in planned_commands.items():
