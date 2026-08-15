@@ -94,8 +94,10 @@ no retry or fallback.
 The pre-fix review-record candidate
 `2edb93e515a62e4f26a6d61f1447e5c605892ec2` matched public `origin/main`, and
 GitHub Actions run `31881710301` passed its Python 3.12／3.13 test, lint, and
-compile matrix. Post-fix public custody is recorded after standing-grant
-integration. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
+compile matrix. Post-fix review-record candidate
+`f5dc9d5f849c2024fabd44470025ff1ad927ae1b` then matched public `origin/main`,
+and GitHub Actions run `31907255236` passed its Python 3.12／3.13 test, lint,
+and compile matrix. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
 
 ## Next action
 

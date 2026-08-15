@@ -119,8 +119,13 @@ push. GitHub Actions run `31881710301` then passed both the Python 3.12 and
 Python 3.13 jobs, including test, lint, and compile steps. The jobs make no
 Final Cut GUI, macOS runtime, or DTD claim.
 
-Post-fix public custody is recorded after the standing-grant integration and
-CI run complete; the earlier run above does not cover candidate `cc813f0`.
+Post-fix review-record integration candidate
+`f5dc9d5f849c2024fabd44470025ff1ad927ae1b` was then fast-forwarded to
+`main` without a merge commit and pushed to the existing public `origin`.
+Local `main`, the remote-tracking ref, `git ls-remote`, and the GitHub commits
+API all returned that exact SHA. GitHub Actions run `31907255236` passed both
+the Python 3.12 and Python 3.13 jobs, including test, lint, and compile steps.
+The jobs make no Final Cut GUI, macOS runtime, or DTD claim.
 
 No Final Cut GUI import, DTD validation, tag, release, pull request, package
 publication, tester contact, or application submission is claimed by Task 9.
