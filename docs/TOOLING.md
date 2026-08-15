@@ -111,6 +111,32 @@ or another project's tool state.
   same exact transcript and revision files. The live network-capable
   `gemini_transcribe.mjs` component remains planned.
 
+## Local paper edit and organization
+
+- `tritrack paper export --help`, `tritrack paper apply --help`, and
+  `tritrack organize --help` are the command authorities for Task 9 flags.
+- Export reads one strict `aligned-transcript-v1` and optionally one canonical
+  `grouping-v1`, then creates one absent XLSX workbook. Apply reopens the exact
+  aligned bytes and one bounded regular non-symlink workbook, re-derives every
+  cue/display/manifest value, and creates one absent canonical grouping JSON.
+- The workbook has exactly four worksheets: visible `Cues`, `Questions`, and
+  `Selections`, plus hidden `_TriTrack`. Hidden state is a usability aid, not a
+  security boundary. Formula cells anywhere in the accepted sheets fail
+  closed; formula-looking transcript text is stored as a literal string.
+- `grouping-v1` is exact-byte bound to the aligned authority and contains only
+  cue-addressed editor intent. `working-cut-v1` is exact-byte bound to both
+  aligned and grouping inputs and copies source hashes and millisecond timing
+  only from aligned cues. Neither artifact creates a second transcript
+  authority.
+- The grouping fixpoint is exact canonical JSON bytes. XLSX ZIP-byte identity
+  is not promised; repeated export instead guarantees the same logical grids,
+  and subsequent apply returns the same grouping bytes.
+- Task 9 performs no network access, provider call, credential lookup, media
+  processing, subprocess invocation, FCPXML emission, or Task 10 orchestration.
+- JSON inputs are bounded to 16 MiB and XLSX inputs to 64 MiB. Inputs are
+  rehashed before temporary-file plus hard-link publication; existing outputs
+  and race winners are never overwritten.
+
 ## Invented quickstart verification
 
 From an editable development installation, run the public Task 6.5 example

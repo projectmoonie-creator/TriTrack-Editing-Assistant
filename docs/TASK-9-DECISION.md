@@ -204,7 +204,7 @@ publication. Existing outputs and race winners are never overwritten.
 
 ## Workbook contract
 
-`paper-workbook-v1` is an `.xlsx` transport with exactly three sheets:
+`paper-workbook-v1` is an `.xlsx` transport with exactly four worksheets:
 
 ### `Cues`
 

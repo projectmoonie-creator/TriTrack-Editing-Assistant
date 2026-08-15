@@ -8,8 +8,9 @@ decisions with the editor.
 > Development scaffold: `0.1.0a0` currently exposes the component registry,
 > the fail-closed `doctor` command, local audio-verified `sync`, fixed-profile
 > local `transcribe`, deterministic cue-addressed `align`, offline receipt-only
-> `hybrid`, and profile-bound deterministic `emit`. Remaining editing commands are listed as
-> `planned` and deliberately return a non-success status until their
+> `hybrid`, profile-bound deterministic `emit`, strict `paper export`／
+> `paper apply`, and deterministic `organize`. Remaining editing commands are
+> listed as `planned` and deliberately return a non-success status until their
 > implementation and tests land. There is no public release yet.
 
 ## Target alpha compatibility
@@ -176,6 +177,50 @@ the same local promotion core as `align`, producing byte-identical output for
 the same transcript and revision bytes. `gemini_transcribe.mjs`, live upload,
 and provider credentials remain unimplemented.
 
+Export an editor-facing workbook from the strict aligned authority:
+
+```bash
+venv/bin/tritrack paper export \
+  --aligned results/aligned-transcript.json \
+  --output results/paper-edit.xlsx \
+  --json
+```
+
+Add `--grouping results/grouping.json` to prefill a workbook from existing
+canonical editor intent. The XLSX file is a transport, not an authority. Its
+complete `Cues` reference grid and hidden public-safe manifest bind it to the
+exact aligned bytes. Formula cells, reference/display changes, unexpected
+sheets, macros, external links, merged cells, and structural drift fail closed.
+Formula-looking transcript text is exported as a literal display string.
+
+After editing only the `Questions` and `Selections` tables, apply the workbook
+back to strict JSON authority:
+
+```bash
+venv/bin/tritrack paper apply \
+  --aligned results/aligned-transcript.json \
+  --workbook results/paper-edit.xlsx \
+  --output results/grouping.json \
+  --json
+```
+
+The resulting `grouping-v1` contains cue addresses and normalized editor text,
+but no transcript text, source hash, or millisecond timing. Compile it into a
+deterministic text-free working cut with timing copied only from the exact
+aligned authority:
+
+```bash
+venv/bin/tritrack organize \
+  --aligned results/aligned-transcript.json \
+  --grouping results/grouping.json \
+  --output results/working-cut.json \
+  --json
+```
+
+All three Task 9 operations are local-only and make no network, provider,
+credential, media-processing, subprocess, FCPXML, or orchestration request.
+Every output path must be absent.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented
@@ -205,7 +250,11 @@ Choose the narrowest entry point that matches your goal:
    preserving local cue timing.
 5. Use `tritrack hybrid` only to validate already-produced provider receipts
    offline before running the same local promotion.
-6. Use `tritrack components --json` to inspect what is implemented before
+6. Use `tritrack paper export` then `tritrack paper apply` to author durable
+   cue-addressed grouping intent through a non-authoritative workbook.
+7. Use `tritrack organize` to compile that intent into a deterministic
+   text-free working cut.
+8. Use `tritrack components --json` to inspect what is implemented before
    trying later roadmap commands; planned commands still fail closed.
 
 ## Eleven-component roadmap
@@ -223,8 +272,8 @@ tritrack components --json
 | 3 | `transcribe_takes.py` | `tritrack transcribe` | implemented |
 | 4 | `string_out.py` | `tritrack emit` | implemented |
 | 5 | `hallucination.py` | `tritrack transcribe` | implemented |
-| 6 | `organizer.py` | `tritrack organize` | planned |
-| 7 | `paper_edit.py` | `tritrack paper` | planned |
+| 6 | `organizer.py` | `tritrack organize` | implemented |
+| 7 | `paper_edit.py` | `tritrack paper` | implemented |
 | 8 | `align_text.py` | `tritrack align` | implemented |
 | 9 | `gemini_hybrid.py` | `tritrack hybrid` | implemented, offline optional |
 | 10 | `gemini_transcribe.mjs` | `tritrack hybrid` | planned, optional |

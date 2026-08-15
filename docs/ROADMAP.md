@@ -25,10 +25,12 @@ here.
 - Task 8: deterministic cue-addressed text promotion with immutable local
   timing, exact-byte provenance, and an isolated offline Gemini-receipt
   conformance adapter. No live provider transport is shipped.
+- Task 9: strict cue-addressed grouping, deterministic working-cut compilation,
+  and a local XLSX paper-edit round trip with complete reference-grid
+  re-derivation. The workbook is a transport; JSON remains authoritative.
 
 ## Next
 
-- Task 9: add organizer and paper-edit round trip.
 - Task 10: implement the installed `run` workflow and create the separate
   end-user `skills/tritrack-editing-assistant/SKILL.md`.
 - Task 11: expand the release-grade CI matrix and complete the privacy,

@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–8 are complete in this public candidate. Task 6 began from exact
+Tasks 1–9 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -73,11 +73,24 @@ Gemini's dynamic-model closeout review passed with no findings, test gaps, or
 documentation gaps. The separately requested Claude subscription review timed
 out and remains explicitly incomplete, with no retry or fallback.
 
+Task 9 implementation candidate
+`f4e8074936674407e21bab2928701b4c88e6216c` tightens cue-addressed
+`grouping-v1`, adds deterministic dual-bound `working-cut-v1` compilation, and
+implements the local `paper export`, `paper apply`, and `organize` surfaces.
+The XLSX workbook is a four-worksheet editor transport, not an authority:
+apply re-derives its complete cue/display grid and public-safe manifest from
+the exact aligned bytes, rejects formulas and structural drift, normalizes
+only editor-authored text, and returns canonical grouping JSON. Task 9 never
+retimes, rewrites, splits, merges, or deletes aligned cues and performs no
+network, provider, credential, media, subprocess, FCPXML, or orchestration
+operation. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
+
 ## Next action
 
-Task 9 adds organizer and paper-edit round trip. It remains a separate public
-task and must not broaden Task 8 into arbitrary full-text alignment, cue
-retiming, or a live provider transport.
+Task 10 implements the installed `run` workflow and the separate end-user
+`tritrack-editing-assistant` skill. It must preserve the maintainer/end-user
+role firewall and must not turn the Task 9 workbook into transcript or timing
+authority.
 
 ## Implemented surface
 
@@ -92,6 +105,9 @@ retiming, or a live provider transport.
   exact-byte provenance;
 - optional offline Gemini receipt conformance that shares the local promotion
   core and performs no network access;
+- cue-addressed grouping with deterministic working-cut compilation;
+- strict local paper-edit export/apply with complete aligned-grid
+  re-derivation, semantic round trips, and atomic no-overwrite publication;
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
@@ -99,8 +115,8 @@ retiming, or a live provider transport.
 - public invented-media synchronization-to-FCPXML quickstart with deterministic
   repeat emission, conditional local DTD verification, and minimal CI.
 
-`organize`, `paper`, `validate`, and `run` remain planned and must return
-non-success until implemented and tested. The network-capable
+`validate` and `run` remain planned and must return non-success until
+implemented and tested. The network-capable
 `gemini_transcribe.mjs` component also remains planned.
 
 ## Custody
