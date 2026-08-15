@@ -156,9 +156,21 @@ def _write_row(
 
 def _paper_aligned_index(aligned: object) -> organizer.AlignedIndex:
     try:
-        return organizer.index_aligned_transcript(aligned)
+        aligned_index = organizer.index_aligned_transcript(aligned)
     except ValueError as error:
         raise ValueError("TRITRACK_PAPER_ALIGNED_INVALID") from error
+    if any(
+        not all(
+            character in "\t\n\r"
+            or 0x20 <= ord(character) <= 0xD7FF
+            or 0xE000 <= ord(character) <= 0xFFFD
+            or 0x10000 <= ord(character) <= 0x10FFFF
+            for character in take_id
+        )
+        for take_id in aligned_index.takes
+    ):
+        raise ValueError("TRITRACK_PAPER_ALIGNED_INVALID")
+    return aligned_index
 
 
 def _cue_rows(aligned: Mapping[str, object]) -> list[tuple[object, ...]]:

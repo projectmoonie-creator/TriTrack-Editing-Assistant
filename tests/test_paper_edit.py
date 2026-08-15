@@ -189,7 +189,7 @@ class PaperExportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             aligned_payload = invented_aligned()
-            aligned_payload["takes"][0]["takeId"] = "Take\vA.wav"
+            aligned_payload["takes"][0]["takeId"] = "A\v.wav"
             aligned = root / "aligned.json"
             aligned.write_text(
                 json.dumps(
