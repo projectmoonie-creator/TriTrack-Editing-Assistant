@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -182,6 +184,35 @@ class PaperExportTest(unittest.TestCase):
             cell = workbook["Cues"]["F2"]
             self.assertEqual(cell.value, "=INVENTED()")
             self.assertEqual(cell.data_type, "s")
+
+    def test_rejects_excel_unsafe_aligned_identity_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned_payload = invented_aligned()
+            aligned_payload["takes"][0]["takeId"] = "Take\vA.wav"
+            aligned = root / "aligned.json"
+            aligned.write_text(
+                json.dumps(
+                    aligned_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = root / "paper.xlsx"
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "TRITRACK_PAPER_ALIGNED_INVALID",
+            ):
+                paper_edit.export_workbook(
+                    aligned,
+                    grouping_path=None,
+                    output_path=output,
+                )
+            self.assertFalse(output.exists())
 
     def test_existing_output_and_missing_parent_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -373,6 +404,84 @@ class PaperApplyTest(unittest.TestCase):
             lambda workbook: workbook["Selections"].merge_cells("A2:B2"),
             "TRITRACK_PAPER_WORKBOOK_INVALID",
         )
+
+    def test_rejects_external_cell_hyperlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, workbook_path, _ = self.editable_workbook(root)
+            workbook = load_workbook(workbook_path, data_only=False)
+            workbook["Questions"]["B2"].hyperlink = (
+                "https://example.invalid/external"
+            )
+            workbook.save(workbook_path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "TRITRACK_PAPER_WORKBOOK_INVALID",
+            ):
+                paper_edit.apply_workbook(
+                    aligned,
+                    workbook_path,
+                    output_path=root / "grouping.json",
+                )
+
+    def test_rejects_extreme_dimensions_before_cell_iteration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, workbook_path, _ = self.editable_workbook(root)
+            workbook = load_workbook(workbook_path, data_only=False)
+            workbook["Questions"].cell(
+                row=1_048_576,
+                column=3,
+            ).number_format = "@"
+            workbook.save(workbook_path)
+
+            with (
+                mock.patch(
+                    "openpyxl.worksheet.worksheet.Worksheet.iter_rows",
+                    side_effect=AssertionError("cell iteration started"),
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "TRITRACK_PAPER_WORKBOOK_INVALID",
+                ),
+            ):
+                paper_edit.apply_workbook(
+                    aligned,
+                    workbook_path,
+                    output_path=root / "grouping.json",
+                )
+
+    def test_rejects_excessive_expanded_zip_before_openpyxl_load(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workbook_path = root / "expanded.xlsx"
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(
+                buffer,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                archive.writestr("xl/worksheets/sheet1.xml", b"x" * 4096)
+            workbook_path.write_bytes(buffer.getvalue())
+
+            with (
+                mock.patch.object(
+                    paper_edit,
+                    "_WORKBOOK_EXPANDED_LIMIT_BYTES",
+                    1024,
+                ),
+                mock.patch.object(
+                    paper_edit,
+                    "load_workbook",
+                    side_effect=AssertionError("openpyxl load started"),
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "TRITRACK_PAPER_WORKBOOK_INVALID",
+                ),
+            ):
+                paper_edit._load_workbook_artifact(workbook_path)
 
     def test_rejects_partial_rows_bad_placement_and_foreign_spans(self) -> None:
         def reject_selection(row, code: str) -> None:

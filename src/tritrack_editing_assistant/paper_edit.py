@@ -12,7 +12,7 @@ import xml.etree.ElementTree as element_tree
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from jsonschema import ValidationError
 from openpyxl import Workbook, load_workbook
@@ -49,6 +49,9 @@ MANIFEST_HEADERS = ("Key", "Value")
 SHEET_NAMES = ("Cues", "Questions", "Selections", "_TriTrack")
 _JSON_LIMIT_BYTES = 16 * 1024 * 1024
 _WORKBOOK_LIMIT_BYTES = 64 * 1024 * 1024
+_WORKBOOK_MEMBER_LIMIT = 512
+_WORKBOOK_EXPANDED_LIMIT_BYTES = 256 * 1024 * 1024
+_WORKBOOK_SINGLE_MEMBER_LIMIT_BYTES = 128 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -151,8 +154,15 @@ def _write_row(
         )
 
 
+def _paper_aligned_index(aligned: object) -> organizer.AlignedIndex:
+    try:
+        return organizer.index_aligned_transcript(aligned)
+    except ValueError as error:
+        raise ValueError("TRITRACK_PAPER_ALIGNED_INVALID") from error
+
+
 def _cue_rows(aligned: Mapping[str, object]) -> list[tuple[object, ...]]:
-    organizer.index_aligned_transcript(aligned)
+    _paper_aligned_index(aligned)
     rows: list[tuple[object, ...]] = []
     takes = aligned["takes"]
     assert isinstance(takes, list)
@@ -343,7 +353,7 @@ def export_workbook(
     assert isinstance(aligned.payload, Mapping)
     grouping: LoadedArtifact | None = None
     grouping_payload: Mapping[str, object] | None = None
-    aligned_index = organizer.index_aligned_transcript(aligned.payload)
+    aligned_index = _paper_aligned_index(aligned.payload)
     if grouping_path is not None:
         grouping = _load_json(
             grouping_path,
@@ -389,9 +399,29 @@ def _load_workbook_artifact(path: Path) -> tuple[LoadedArtifact, Workbook]:
     )
     try:
         with zipfile.ZipFile(io.BytesIO(encoded)) as archive:
-            names = archive.namelist()
-            if any(name.lower().endswith("vbaproject.bin") for name in names):
+            members = archive.infolist()
+            names = [member.filename for member in members]
+            expanded_size = 0
+            if (
+                not members
+                or len(members) > _WORKBOOK_MEMBER_LIMIT
+                or len(names) != len(set(names))
+            ):
                 raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+            for member in members:
+                member_path = PurePosixPath(member.filename)
+                if (
+                    member.flag_bits & 0x1
+                    or member.filename.startswith(("/", "\\"))
+                    or "\\" in member.filename
+                    or ".." in member_path.parts
+                    or member.filename.lower().endswith("vbaproject.bin")
+                    or member.file_size > _WORKBOOK_SINGLE_MEMBER_LIMIT_BYTES
+                ):
+                    raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+                expanded_size += member.file_size
+                if expanded_size > _WORKBOOK_EXPANDED_LIMIT_BYTES:
+                    raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
         workbook = load_workbook(
             io.BytesIO(encoded),
             data_only=False,
@@ -412,7 +442,11 @@ def _load_workbook_artifact(path: Path) -> tuple[LoadedArtifact, Workbook]:
     return artifact, workbook
 
 
-def _reject_unsafe_workbook_state(workbook: Workbook) -> None:
+def _reject_unsafe_workbook_state(
+    workbook: Workbook,
+    *,
+    cue_row_count: int,
+) -> None:
     if workbook.sheetnames != list(SHEET_NAMES):
         raise ValueError("TRITRACK_PAPER_SHEETS_INVALID")
     if workbook["_TriTrack"].sheet_state != "hidden" or any(
@@ -421,11 +455,26 @@ def _reject_unsafe_workbook_state(workbook: Workbook) -> None:
         raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
     if len(workbook.defined_names) or getattr(workbook, "_external_links", []):
         raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+    maximum_dimensions = {
+        "Cues": (cue_row_count + 1, len(CUES_HEADERS)),
+        "Questions": (cue_row_count + 1, len(QUESTIONS_HEADERS)),
+        "Selections": (cue_row_count + 1, len(SELECTIONS_HEADERS)),
+        "_TriTrack": (5, len(MANIFEST_HEADERS)),
+    }
+    for worksheet in workbook.worksheets:
+        maximum_rows, maximum_columns = maximum_dimensions[worksheet.title]
+        if (
+            worksheet.max_row > maximum_rows
+            or worksheet.max_column > maximum_columns
+        ):
+            raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
     for worksheet in workbook.worksheets:
         if worksheet.merged_cells.ranges:
             raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
         for row in worksheet.iter_rows():
             for cell in row:
+                if cell.hyperlink is not None:
+                    raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
                 if cell.data_type == "f":
                     raise ValueError("TRITRACK_PAPER_FORMULA_FORBIDDEN")
 
@@ -654,8 +703,9 @@ def apply_workbook(
     )
     workbook_artifact, workbook = _load_workbook_artifact(workbook_path)
     assert isinstance(aligned.payload, Mapping)
-    aligned_index = organizer.index_aligned_transcript(aligned.payload)
-    _reject_unsafe_workbook_state(workbook)
+    aligned_index = _paper_aligned_index(aligned.payload)
+    cue_rows = _cue_rows(aligned.payload)
+    _reject_unsafe_workbook_state(workbook, cue_row_count=len(cue_rows))
     cue_rows = _verify_cues_grid(workbook, aligned.payload)
     _verify_manifest(
         workbook,
