@@ -8,13 +8,16 @@ import json
 import os
 import stat
 import tempfile
+import xml.etree.ElementTree as element_tree
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from jsonschema import ValidationError
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.utils.exceptions import InvalidFileException
 
 from . import __version__, organizer
 from .contracts import validate_contract
@@ -45,6 +48,7 @@ SELECTIONS_HEADERS = (
 MANIFEST_HEADERS = ("Key", "Value")
 SHEET_NAMES = ("Cues", "Questions", "Selections", "_TriTrack")
 _JSON_LIMIT_BYTES = 16 * 1024 * 1024
+_WORKBOOK_LIMIT_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,7 @@ class LoadedArtifact:
     encoded: bytes
     sha256: str
     invalid_code: str
+    limit: int
 
 
 def _read_regular_bytes(path: Path, *, limit: int, invalid_code: str) -> bytes:
@@ -106,6 +111,7 @@ def _load_json(
         encoded,
         hashlib.sha256(encoded).hexdigest(),
         invalid_code,
+        _JSON_LIMIT_BYTES,
     )
 
 
@@ -113,7 +119,7 @@ def _verify_unchanged(artifact: LoadedArtifact) -> None:
     try:
         encoded = _read_regular_bytes(
             artifact.path,
-            limit=_JSON_LIMIT_BYTES,
+            limit=artifact.limit,
             invalid_code=artifact.invalid_code,
         )
     except ValueError as error:
@@ -364,3 +370,304 @@ def export_workbook(
         _verify_unchanged(grouping)
     _publish_bytes(buffer.getvalue(), destination)
     return summary
+
+
+def _load_workbook_artifact(path: Path) -> tuple[LoadedArtifact, Workbook]:
+    selected = Path(path)
+    encoded = _read_regular_bytes(
+        selected,
+        limit=_WORKBOOK_LIMIT_BYTES,
+        invalid_code="TRITRACK_PAPER_WORKBOOK_INVALID",
+    )
+    artifact = LoadedArtifact(
+        selected,
+        None,
+        encoded,
+        hashlib.sha256(encoded).hexdigest(),
+        "TRITRACK_PAPER_WORKBOOK_INVALID",
+        _WORKBOOK_LIMIT_BYTES,
+    )
+    try:
+        with zipfile.ZipFile(io.BytesIO(encoded)) as archive:
+            names = archive.namelist()
+            if any(name.lower().endswith("vbaproject.bin") for name in names):
+                raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+        workbook = load_workbook(
+            io.BytesIO(encoded),
+            data_only=False,
+            read_only=False,
+            keep_links=True,
+        )
+    except ValueError:
+        raise
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        zipfile.BadZipFile,
+        InvalidFileException,
+        element_tree.ParseError,
+    ) as error:
+        raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID") from error
+    return artifact, workbook
+
+
+def _reject_unsafe_workbook_state(workbook: Workbook) -> None:
+    if workbook.sheetnames != list(SHEET_NAMES):
+        raise ValueError("TRITRACK_PAPER_SHEETS_INVALID")
+    if workbook["_TriTrack"].sheet_state != "hidden" or any(
+        workbook[name].sheet_state != "visible" for name in SHEET_NAMES[:-1]
+    ):
+        raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+    if len(workbook.defined_names) or getattr(workbook, "_external_links", []):
+        raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+    for worksheet in workbook.worksheets:
+        if worksheet.merged_cells.ranges:
+            raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    raise ValueError("TRITRACK_PAPER_FORMULA_FORBIDDEN")
+
+
+def _sheet_rows(
+    worksheet,
+    headers: Sequence[str],
+    *,
+    invalid_code: str,
+) -> list[tuple[object, ...]]:
+    actual_headers = tuple(
+        worksheet.cell(row=1, column=column).value
+        for column in range(1, len(headers) + 1)
+    )
+    if actual_headers != tuple(headers):
+        raise ValueError(invalid_code)
+    if any(
+        worksheet.cell(row=row, column=column).value is not None
+        for row in range(1, worksheet.max_row + 1)
+        for column in range(len(headers) + 1, worksheet.max_column + 1)
+    ):
+        raise ValueError(invalid_code)
+    raw_rows = [
+        tuple(
+            worksheet.cell(row=row, column=column).value
+            for column in range(1, len(headers) + 1)
+        )
+        for row in range(2, worksheet.max_row + 1)
+    ]
+    while raw_rows and all(value is None for value in raw_rows[-1]):
+        raw_rows.pop()
+    if any(all(value is None for value in row) for row in raw_rows):
+        raise ValueError(invalid_code)
+    return raw_rows
+
+
+def _require_exact_row_types(
+    actual: Sequence[object],
+    expected: Sequence[object],
+) -> None:
+    if len(actual) != len(expected) or any(
+        value != reference or type(value) is not type(reference)
+        for value, reference in zip(actual, expected, strict=True)
+    ):
+        raise ValueError("TRITRACK_PAPER_REFERENCE_MISMATCH")
+
+
+def _verify_cues_grid(
+    workbook: Workbook,
+    aligned: Mapping[str, object],
+) -> list[tuple[object, ...]]:
+    expected = _cue_rows(aligned)
+    actual = _sheet_rows(
+        workbook["Cues"],
+        CUES_HEADERS,
+        invalid_code="TRITRACK_PAPER_REFERENCE_MISMATCH",
+    )
+    if len(actual) != len(expected):
+        raise ValueError("TRITRACK_PAPER_REFERENCE_MISMATCH")
+    for actual_row, expected_row in zip(actual, expected, strict=True):
+        _require_exact_row_types(actual_row, expected_row)
+    return expected
+
+
+def _verify_manifest(
+    workbook: Workbook,
+    *,
+    aligned_sha256: str,
+    cue_rows: Sequence[Sequence[object]],
+) -> None:
+    expected = [
+        ("WorkbookSchemaVersion", WORKBOOK_SCHEMA_VERSION),
+        ("ToolVersion", __version__),
+        ("AlignedTranscriptSha256", aligned_sha256),
+        ("CuesGridSha256", _cues_grid_sha256(cue_rows)),
+    ]
+    actual = _sheet_rows(
+        workbook["_TriTrack"],
+        MANIFEST_HEADERS,
+        invalid_code="TRITRACK_PAPER_MANIFEST_MISMATCH",
+    )
+    if actual != expected:
+        raise ValueError("TRITRACK_PAPER_MANIFEST_MISMATCH")
+
+
+def _canonical_workbook_text(
+    value: object,
+    *,
+    maximum: int,
+    required: bool,
+) -> str | None:
+    try:
+        return organizer.canonical_editor_text(
+            value,
+            maximum=maximum,
+            required=required,
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("TRITRACK_PAPER_ROW_INVALID") from error
+
+
+def _positive_integer(value: object) -> int:
+    if type(value) is not int or value < 1:
+        raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+    return value
+
+
+def _required_string(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+    return value
+
+
+def _grouping_from_workbook(
+    workbook: Workbook,
+    *,
+    aligned_index: organizer.AlignedIndex,
+    aligned_sha256: str,
+) -> dict[str, object]:
+    question_rows = _sheet_rows(
+        workbook["Questions"],
+        QUESTIONS_HEADERS,
+        invalid_code="TRITRACK_PAPER_ROW_INVALID",
+    )
+    selection_rows = _sheet_rows(
+        workbook["Selections"],
+        SELECTIONS_HEADERS,
+        invalid_code="TRITRACK_PAPER_ROW_INVALID",
+    )
+    questions: list[dict[str, object]] = []
+    questions_by_id: dict[str, dict[str, object]] = {}
+    for question_id, question_text, order in question_rows:
+        identifier = _required_string(question_id)
+        question = {
+            "id": identifier,
+            "question": _canonical_workbook_text(
+                question_text,
+                maximum=organizer.QUESTION_TEXT_LIMIT,
+                required=True,
+            ),
+            "order": _positive_integer(order),
+            "answers": [],
+        }
+        if identifier in questions_by_id:
+            raise ValueError("TRITRACK_ORGANIZER_DUPLICATE_ID")
+        questions.append(question)
+        questions_by_id[identifier] = question
+
+    reserve: list[dict[str, object]] = []
+    for row in selection_rows:
+        (
+            placement,
+            segment_id,
+            question_id,
+            order,
+            take_id,
+            start_cue_id,
+            end_cue_id,
+            reserve_reason,
+            editor_note,
+        ) = row
+        placement = _required_string(placement)
+        common: dict[str, object] = {
+            "id": _required_string(segment_id),
+            "order": _positive_integer(order),
+            "takeId": _required_string(take_id),
+            "startCueId": _required_string(start_cue_id),
+            "endCueId": _required_string(end_cue_id),
+        }
+        note = _canonical_workbook_text(
+            editor_note,
+            maximum=organizer.NOTE_TEXT_LIMIT,
+            required=False,
+        )
+        if note is not None:
+            common["note"] = note
+        if placement == "ANSWER":
+            if reserve_reason not in {None, ""}:
+                raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+            selected_question = questions_by_id.get(_required_string(question_id))
+            if selected_question is None:
+                raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+            answers = selected_question["answers"]
+            assert isinstance(answers, list)
+            answers.append(common)
+        elif placement == "RESERVE":
+            if question_id not in {None, ""}:
+                raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+            common["reason"] = _canonical_workbook_text(
+                reserve_reason,
+                maximum=organizer.QUESTION_TEXT_LIMIT,
+                required=True,
+            )
+            reserve.append(common)
+        else:
+            raise ValueError("TRITRACK_PAPER_ROW_INVALID")
+
+    grouping: dict[str, object] = {
+        "schemaVersion": "tritrack.grouping/v1",
+        "alignedTranscriptSha256": aligned_sha256,
+        "questions": questions,
+        "reserve": reserve,
+    }
+    return organizer.validate_grouping(
+        grouping,
+        aligned_index=aligned_index,
+        aligned_sha256=aligned_sha256,
+    )
+
+
+def apply_workbook(
+    aligned_path: Path,
+    workbook_path: Path,
+    *,
+    output_path: Path,
+) -> dict[str, object]:
+    """Apply strict workbook intent and publish canonical grouping JSON."""
+
+    destination = require_absent_output(output_path)
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    aligned = _load_json(
+        aligned_path,
+        contract="aligned-transcript-v1",
+        invalid_code="TRITRACK_PAPER_ALIGNED_INVALID",
+    )
+    workbook_artifact, workbook = _load_workbook_artifact(workbook_path)
+    assert isinstance(aligned.payload, Mapping)
+    aligned_index = organizer.index_aligned_transcript(aligned.payload)
+    _reject_unsafe_workbook_state(workbook)
+    cue_rows = _verify_cues_grid(workbook, aligned.payload)
+    _verify_manifest(
+        workbook,
+        aligned_sha256=aligned.sha256,
+        cue_rows=cue_rows,
+    )
+    grouping = _grouping_from_workbook(
+        workbook,
+        aligned_index=aligned_index,
+        aligned_sha256=aligned.sha256,
+    )
+    _verify_unchanged(aligned)
+    _verify_unchanged(workbook_artifact)
+    _publish_bytes(organizer.encode_grouping(grouping), destination)
+    return grouping

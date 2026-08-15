@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from openpyxl import load_workbook
 
 from tests.task9_fixtures import invented_aligned, invented_grouping
-from tritrack_editing_assistant import paper_edit
+from tritrack_editing_assistant import organizer, paper_edit
+from tritrack_editing_assistant.contracts import validate_contract
 
 
 def write_aligned(root: Path, *, formula_text: bool = False) -> tuple[Path, bytes]:
+    root.mkdir(parents=True, exist_ok=True)
     aligned = invented_aligned()
     if formula_text:
         aligned["takes"][0]["cues"][0]["text"] = "=INVENTED()"
@@ -201,6 +205,291 @@ class PaperExportTest(unittest.TestCase):
                     grouping_path=None,
                     output_path=root / "missing" / "paper.xlsx",
                 )
+
+
+class PaperApplyTest(unittest.TestCase):
+    def editable_workbook(self, root: Path) -> tuple[Path, Path, bytes]:
+        aligned, aligned_bytes = write_aligned(root)
+        workbook_path = root / "editable.xlsx"
+        paper_edit.export_workbook(
+            aligned,
+            grouping_path=None,
+            output_path=workbook_path,
+        )
+        workbook = load_workbook(workbook_path, data_only=False)
+        questions = workbook["Questions"]
+        questions.append(["question-001", "  What   changed?  ", 1])
+        questions.append(["question-002", "What comes next?", 2])
+        selections = workbook["Selections"]
+        selections.append(
+            [
+                "ANSWER",
+                "answer-001",
+                "question-001",
+                1,
+                "A.wav",
+                "cue-000001",
+                "cue-000002",
+                None,
+                "  Primary   invented answer  ",
+            ]
+        )
+        selections.append(
+            [
+                "ANSWER",
+                "answer-002",
+                "question-002",
+                1,
+                "B.wav",
+                "cue-000001",
+                "cue-000001",
+                None,
+                None,
+            ]
+        )
+        selections.append(
+            [
+                "RESERVE",
+                "reserve-001",
+                None,
+                1,
+                "B.wav",
+                "cue-000002",
+                "cue-000002",
+                " Alternate   invented answer ",
+                "  Keep   available ",
+            ]
+        )
+        workbook.save(workbook_path)
+        return aligned, workbook_path, aligned_bytes
+
+    def test_applies_normalized_edits_to_strict_grouping(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, workbook, aligned_bytes = self.editable_workbook(root)
+            output = root / "grouping.json"
+
+            grouping = paper_edit.apply_workbook(
+                aligned,
+                workbook,
+                output_path=output,
+            )
+
+            validate_contract("grouping-v1", grouping)
+            expected = invented_grouping()
+            expected["alignedTranscriptSha256"] = hashlib.sha256(
+                aligned_bytes
+            ).hexdigest()
+            self.assertEqual(grouping, expected)
+            self.assertEqual(output.read_bytes(), organizer.encode_grouping(expected))
+            encoded = output.read_text(encoding="utf-8")
+            self.assertNotIn("startMs", encoded)
+            self.assertNotIn("sourceSha256", encoded)
+            self.assertNotIn("Invented first answer.", encoded)
+
+    def test_grouping_fixpoint_and_logical_grid_idempotence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, aligned_bytes = write_aligned(root)
+            grouping, grouping_bytes = write_grouping(root, aligned_bytes)
+            workbook = root / "prefilled.xlsx"
+            applied = root / "applied.json"
+
+            paper_edit.export_workbook(
+                aligned,
+                grouping_path=grouping,
+                output_path=workbook,
+            )
+            paper_edit.apply_workbook(aligned, workbook, output_path=applied)
+            self.assertEqual(applied.read_bytes(), grouping_bytes)
+
+            edited_aligned, edited_workbook, _ = self.editable_workbook(root / "edit")
+            normalized = root / "normalized.json"
+            paper_edit.apply_workbook(
+                edited_aligned,
+                edited_workbook,
+                output_path=normalized,
+            )
+            first = root / "first.xlsx"
+            second = root / "second.xlsx"
+            paper_edit.export_workbook(
+                edited_aligned,
+                grouping_path=normalized,
+                output_path=first,
+            )
+            paper_edit.export_workbook(
+                edited_aligned,
+                grouping_path=normalized,
+                output_path=second,
+            )
+            self.assertEqual(logical_grid(first), logical_grid(second))
+            first_applied = root / "first-applied.json"
+            second_applied = root / "second-applied.json"
+            paper_edit.apply_workbook(
+                edited_aligned, first, output_path=first_applied
+            )
+            paper_edit.apply_workbook(
+                edited_aligned, second, output_path=second_applied
+            )
+            self.assertEqual(first_applied.read_bytes(), normalized.read_bytes())
+            self.assertEqual(second_applied.read_bytes(), normalized.read_bytes())
+
+    def test_rejects_formula_reference_manifest_and_sheet_tampering(self) -> None:
+        def reject_edit(mutator, code: str) -> None:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                aligned, workbook_path, _ = self.editable_workbook(root)
+                workbook = load_workbook(workbook_path, data_only=False)
+                mutator(workbook)
+                workbook.save(workbook_path)
+                with self.assertRaisesRegex(ValueError, code):
+                    paper_edit.apply_workbook(
+                        aligned,
+                        workbook_path,
+                        output_path=root / "grouping.json",
+                    )
+
+        reject_edit(
+            lambda workbook: setattr(
+                workbook["Questions"]["B2"], "value", "=INVENTED()"
+            ),
+            "TRITRACK_PAPER_FORMULA_FORBIDDEN",
+        )
+        reject_edit(
+            lambda workbook: setattr(workbook["Cues"]["F2"], "value", "Misleading"),
+            "TRITRACK_PAPER_REFERENCE_MISMATCH",
+        )
+        reject_edit(
+            lambda workbook: setattr(
+                workbook["_TriTrack"]["B4"], "value", "f" * 64
+            ),
+            "TRITRACK_PAPER_MANIFEST_MISMATCH",
+        )
+        reject_edit(
+            lambda workbook: workbook.create_sheet("Unexpected"),
+            "TRITRACK_PAPER_SHEETS_INVALID",
+        )
+        reject_edit(
+            lambda workbook: workbook["Selections"].merge_cells("A2:B2"),
+            "TRITRACK_PAPER_WORKBOOK_INVALID",
+        )
+
+    def test_rejects_partial_rows_bad_placement_and_foreign_spans(self) -> None:
+        def reject_selection(row, code: str) -> None:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                aligned, _ = write_aligned(root)
+                workbook_path = root / "paper.xlsx"
+                paper_edit.export_workbook(
+                    aligned,
+                    grouping_path=None,
+                    output_path=workbook_path,
+                )
+                workbook = load_workbook(workbook_path, data_only=False)
+                workbook["Questions"].append(
+                    ["question-001", "What changed?", 1]
+                )
+                workbook["Selections"].append(row)
+                workbook.save(workbook_path)
+                with self.assertRaisesRegex(ValueError, code):
+                    paper_edit.apply_workbook(
+                        aligned,
+                        workbook_path,
+                        output_path=root / "grouping.json",
+                    )
+
+        reject_selection(
+            ["ANSWER", "answer-001", "question-001"],
+            "TRITRACK_PAPER_ROW_INVALID",
+        )
+        reject_selection(
+            [
+                "OTHER",
+                "answer-001",
+                "question-001",
+                1,
+                "A.wav",
+                "cue-000001",
+                "cue-000001",
+                None,
+                None,
+            ],
+            "TRITRACK_PAPER_ROW_INVALID",
+        )
+        reject_selection(
+            [
+                "ANSWER",
+                "answer-001",
+                "question-001",
+                1,
+                "Unknown.wav",
+                "cue-000001",
+                "cue-000001",
+                None,
+                None,
+            ],
+            "TRITRACK_ORGANIZER_TAKE_UNKNOWN",
+        )
+
+    def test_file_boundaries_late_mutation_and_publication_race(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, workbook, _ = self.editable_workbook(root)
+            symlink = root / "paper-link.xlsx"
+            symlink.symlink_to(workbook)
+            with self.assertRaisesRegex(ValueError, "TRITRACK_PAPER_WORKBOOK_INVALID"):
+                paper_edit.apply_workbook(
+                    aligned,
+                    symlink,
+                    output_path=root / "symlink.json",
+                )
+
+            invalid_zip = root / "invalid.xlsx"
+            invalid_zip.write_bytes(b"not a workbook")
+            with self.assertRaisesRegex(ValueError, "TRITRACK_PAPER_WORKBOOK_INVALID"):
+                paper_edit.apply_workbook(
+                    aligned,
+                    invalid_zip,
+                    output_path=root / "invalid.json",
+                )
+
+            output = root / "changed.json"
+            original_verify = paper_edit._verify_unchanged
+
+            def mutate_then_verify(artifact):
+                if artifact.path == workbook:
+                    workbook.write_bytes(workbook.read_bytes() + b" ")
+                return original_verify(artifact)
+
+            with (
+                mock.patch.object(
+                    paper_edit,
+                    "_verify_unchanged",
+                    side_effect=mutate_then_verify,
+                ),
+                self.assertRaisesRegex(ValueError, "TRITRACK_PAPER_INPUT_CHANGED"),
+            ):
+                paper_edit.apply_workbook(aligned, workbook, output_path=output)
+            self.assertFalse(output.exists())
+
+            aligned, workbook, _ = self.editable_workbook(root / "race-input")
+            race_output = root / "race.json"
+
+            def race_winner(_source, destination):
+                Path(destination).write_text("winner", encoding="utf-8")
+                raise FileExistsError
+
+            with (
+                mock.patch.object(os, "link", side_effect=race_winner),
+                self.assertRaisesRegex(ValueError, "TRITRACK_OUTPUT_EXISTS"),
+            ):
+                paper_edit.apply_workbook(
+                    aligned,
+                    workbook,
+                    output_path=race_output,
+                )
+            self.assertEqual(race_output.read_text(encoding="utf-8"), "winner")
+            self.assertEqual(list(root.glob(".race.json.*.tmp")), [])
 
 
 if __name__ == "__main__":
