@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.example/schemas/release-manifest-v1.schema.json",
+  "title": "TriTrack release manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "project",
+    "sourceInventory",
+    "toolchain",
+    "platform",
+    "artifacts",
+    "reproducibility",
+    "gates",
+    "nonClaims"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "tritrack.release-manifest/v1"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "commit"],
+      "properties": {
+        "name": {"const": "tritrack-editing-assistant"},
+        "version": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "sourceInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "sha256"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python",
+        "implementation",
+        "pip",
+        "build",
+        "setuptools",
+        "wheel"
+      ],
+      "properties": {
+        "python": {"type": "string", "minLength": 1},
+        "implementation": {"const": "CPython"},
+        "pip": {"type": "string", "minLength": 1},
+        "build": {"type": "string", "minLength": 1},
+        "setuptools": {"type": "string", "minLength": 1},
+        "wheel": {"type": "string", "minLength": 1}
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "machine"],
+      "properties": {
+        "system": {"enum": ["Darwin", "Linux"]},
+        "machine": {"enum": ["arm64", "x86_64"]}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheel", "sdist"],
+      "properties": {
+        "wheel": {"$ref": "#/$defs/artifact"},
+        "sdist": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheelBytesMatch", "sdistMembersMatch"],
+      "properties": {
+        "wheelBytesMatch": {"const": true},
+        "sdistMembersMatch": {"const": true}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceIdentity",
+        "sourcePrivacy",
+        "wheelArchive",
+        "sdistArchive",
+        "freshInstall"
+      ],
+      "properties": {
+        "sourceIdentity": {"const": "pass"},
+        "sourcePrivacy": {"const": "pass"},
+        "wheelArchive": {"const": "pass"},
+        "sdistArchive": {"const": "pass"},
+        "freshInstall": {"const": "pass"}
+      }
+    },
+    "nonClaims": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "no-tag",
+          "no-release",
+          "no-package-publication",
+          "no-pull-request",
+          "no-tester-contact",
+          "no-signing",
+          "no-attestation",
+          "no-sbom",
+          "no-final-cut-gui",
+          "no-dtd",
+          "no-provider",
+          "no-application-submission"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "sizeBytes",
+        "memberCount",
+        "memberInventorySha256"
+      ],
+      "properties": {
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "sizeBytes": {"type": "integer", "minimum": 1},
+        "memberCount": {"type": "integer", "minimum": 1},
+        "memberInventorySha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

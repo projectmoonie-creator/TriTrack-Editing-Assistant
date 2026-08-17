@@ -1,0 +1,30 @@
+include README.md
+include LICENSE
+include NOTICE
+include CHANGELOG.md
+include CONTRIBUTING.md
+include SECURITY.md
+include CODE_OF_CONDUCT.md
+include pyproject.toml
+include MANIFEST.in
+include .github/workflows/ci.yml
+include docs/ROADMAP.md
+include docs/TOOLING.md
+include docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md
+recursive-include examples *.py
+recursive-include skills/tritrack-editing-assistant *.md *.yaml
+include scripts/capture_basic_title_binding.py
+recursive-include release *.json
+recursive-include requirements *.txt
+recursive-include src/tritrack_editing_assistant *.py *.json *.mjs
+recursive-include tests *.py
+exclude tests/test_maintainer_boundary.py
+prune .agents
+prune .release-evidence
+prune build
+prune dist
+prune docs/reviews
+prune docs/superpowers/plans
+global-exclude *.py[cod]
+global-exclude .DS_Store
+global-exclude __pycache__

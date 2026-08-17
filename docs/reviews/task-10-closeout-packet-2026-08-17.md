@@ -1261,7 +1261,7 @@ index 0000000..99ae2ec
 +Run both:
 +
 +```bash
-+python3 /Users/hsin-hsinyuan/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/tritrack-editing-assistant
++python3 ${CODEX_SKILLS_ROOT}/.system/skill-creator/scripts/quick_validate.py skills/tritrack-editing-assistant
 +venv/bin/python -m unittest tests.test_maintainer_boundary -v
 +```
 +
@@ -1307,8 +1307,8 @@ index 0000000..99ae2ec
 +venv/bin/ruff check src tests examples
 +venv/bin/python -m compileall -q src tests examples
 +python3 .agents/skills/tritrack-editing-assistant-maintainer/scripts/check_project_identity.py --root .
-+python3 /Users/hsin-hsinyuan/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/tritrack-editing-assistant-maintainer
-+python3 /Users/hsin-hsinyuan/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/tritrack-editing-assistant
++python3 ${CODEX_SKILLS_ROOT}/.system/skill-creator/scripts/quick_validate.py .agents/skills/tritrack-editing-assistant-maintainer
++python3 ${CODEX_SKILLS_ROOT}/.system/skill-creator/scripts/quick_validate.py skills/tritrack-editing-assistant
 +git diff --check
 +```
 +
@@ -6041,4 +6041,3 @@ index 0000000..61295df
 +    unittest.main()
 
 ```
-
