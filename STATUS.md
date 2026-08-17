@@ -1,6 +1,6 @@
 # Public maintenance status
 
-Updated: 2026-08-15
+Updated: 2026-08-17
 Project kind: public engine
 Lane: `OSS`
 Release state: public pre-release source; no tag, package publication, or
@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–9 are complete in this public candidate. Task 6 began from exact
+Tasks 1–10 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -99,12 +99,31 @@ compile matrix. Post-fix review-record candidate
 and GitHub Actions run `31907255236` passed its Python 3.12／3.13 test, lint,
 and compile matrix. Sanitized evidence is in `docs/TASK-9-VERIFICATION.md`.
 
+Task 10 implementation candidate
+`5fe9a4531f8dbd23f98174023d61f66a359d461b` adds installed
+`tritrack run prepare`, `align`, `finish`, and read-only `status` commands.
+Each mutating transition publishes a new immutable absent directory with its
+manifest hard-linked last; fixed artifact names, exact byte hashes,
+phase-specific completed stages, and the prior-manifest chain are validated
+before reuse. The final story renderer re-derives every active range and title
+from exact aligned／grouping／working-cut authorities, quantizes once to profile
+frames, honors paired-source offsets and the declared audio master, excludes
+reserve, and emits strict story-ordered FCPXML. Task 10 also installs the
+separate end-user `tritrack-editing-assistant` skill with help-first command
+discovery and explicit text-revision and paper-edit human gates. The workbook
+remains transport only. The workflow makes no network request and does not
+claim a Final Cut GUI import, DTD result, or round trip. Sanitized evidence is
+in `docs/TASK-10-VERIFICATION.md`.
+Local verification passed 193 complete-suite and 9 maintainer-boundary tests,
+plus Ruff, compilation, identity, both skill validators, non-editable wheel
+help／status smoke, registry, and diff gates.
+
 ## Next action
 
-Task 10 implements the installed `run` workflow and the separate end-user
-`tritrack-editing-assistant` skill. It must preserve the maintainer/end-user
-role firewall and must not turn the Task 9 workbook into transcript or timing
-authority.
+Task 11 expands the release-grade CI matrix and completes the privacy,
+provenance, packaging, and release gates. Task 10 does not authorize or claim
+tags, releases, package publication, tester contact, or application
+submission.
 
 ## Implemented surface
 
@@ -122,6 +141,10 @@ authority.
 - cue-addressed grouping with deterministic working-cut compilation;
 - strict local paper-edit export/apply with complete aligned-grid
   re-derivation, semantic round trips, and atomic no-overwrite publication;
+- immutable prepared／aligned／finished run bundles with exact manifest chains,
+  fixed artifacts, manifest-last publication, and read-only status;
+- deterministic story-ordered FCPXML projection from exact editor authorities;
+- separate installed end-user editing skill with two explicit human gates;
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
@@ -129,9 +152,9 @@ authority.
 - public invented-media synchronization-to-FCPXML quickstart with deterministic
   repeat emission, conditional local DTD verification, and minimal CI.
 
-`validate` and `run` remain planned and must return non-success until
-implemented and tested. The network-capable
-`gemini_transcribe.mjs` component also remains planned.
+`validate` remains planned and must return non-success until implemented and
+tested. The network-capable `gemini_transcribe.mjs` component also remains
+planned.
 
 ## Custody
 

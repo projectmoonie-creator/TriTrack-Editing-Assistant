@@ -9,9 +9,9 @@ decisions with the editor.
 > the fail-closed `doctor` command, local audio-verified `sync`, fixed-profile
 > local `transcribe`, deterministic cue-addressed `align`, offline receipt-only
 > `hybrid`, profile-bound deterministic `emit`, strict `paper export`／
-> `paper apply`, and deterministic `organize`. Remaining editing commands are
-> listed as `planned` and deliberately return a non-success status until their
-> implementation and tests land. There is no public release yet.
+> `paper apply`, deterministic `organize`, and immutable `run prepare`／
+> `align`／`finish`／`status`. `validate` and the optional live transport remain
+> planned and fail closed. There is no public release yet.
 
 ## Target alpha compatibility
 
@@ -223,6 +223,51 @@ All three Task 9 operations are local-only and make no network, provider,
 credential, media-processing, subprocess, FCPXML, or orchestration request.
 Every output path must be absent.
 
+## Task 10 immutable run workflow
+
+Task 10 connects the installed local commands through three immutable bundles
+and two explicit editor gates. Start by reading the installed command help:
+
+```bash
+venv/bin/tritrack run --help
+venv/bin/tritrack run prepare --help
+venv/bin/tritrack run align --help
+venv/bin/tritrack run finish --help
+venv/bin/tritrack run status --help
+```
+
+`run prepare` accepts repeatable camera A／B paths, a repeatable transcription
+subset, the caller-owned local model, explicit language, public profile and
+title binding, caller-owned event／project names, a safe run ID, and one absent
+output directory. It runs doctor → sync → transcribe → string-out and publishes
+exactly `doctor.json`, `sync-map.json`, `transcript-bundle.json`,
+`string-out.fcpxml`, and `run-manifest.json`.
+
+Pause for the editor to provide one strict `text-revision-v1` bound to the
+exact transcript bytes. An empty `takes: []` is accepted only as explicit
+no-change approval. Then `run align` consumes the complete prepared bundle and
+revision, publishing `aligned-transcript.json`, `paper-edit.xlsx`, and a new
+manifest into another absent directory.
+
+Pause again while the editor changes only the workbook's `Questions` and
+`Selections` tables. The workbook is transport, not authority. `run finish`
+consumes the exact prepared and aligned bundles, edited workbook, and original
+camera sources; it publishes canonical `grouping.json`, text-free
+`working-cut.json`, story-ordered `story-cut.fcpxml`, and a finished manifest.
+The story renderer re-derives cue text and timing from strict JSON authorities,
+honors sync offsets and the declared audio master, and excludes reserve ranges.
+
+Every mutating stage requires a new absent directory and publishes its manifest
+last. `run status` is read-only and returns only the run ID, phase, next action,
+completed stage names, and logical artifact hashes. The workflow makes no
+network call and does not claim a Final Cut GUI import, DTD validation, or
+round trip.
+
+The separate installed skill at
+`skills/tritrack-editing-assistant/SKILL.md` guides editors through the two
+human gates using help-first installed commands. It contains no repository
+maintenance or publication authority.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented
@@ -256,8 +301,10 @@ Choose the narrowest entry point that matches your goal:
    cue-addressed grouping intent through a non-authoritative workbook.
 7. Use `tritrack organize` to compile that intent into a deterministic
    text-free working cut.
-8. Use `tritrack components --json` to inspect what is implemented before
-   trying later roadmap commands; planned commands still fail closed.
+8. Use `tritrack run` to carry the exact local artifacts through immutable
+   prepared, aligned, and finished bundles with explicit editor approval.
+9. Use `tritrack components --json` to inspect what is implemented before
+   trying later roadmap commands; `validate` still fails closed.
 
 ## Eleven-component roadmap
 
@@ -279,7 +326,7 @@ tritrack components --json
 | 8 | `align_text.py` | `tritrack align` | implemented |
 | 9 | `gemini_hybrid.py` | `tritrack hybrid` | implemented, offline optional |
 | 10 | `gemini_transcribe.mjs` | `tritrack hybrid` | planned, optional |
-| 11 | `multicam-sync` | `tritrack run` | planned |
+| 11 | `multicam-sync` | `tritrack run` | implemented |
 
 `components`, `doctor`, schemas, packaging, fixtures, tests, and release
 automation are supporting infrastructure and do not increase the component

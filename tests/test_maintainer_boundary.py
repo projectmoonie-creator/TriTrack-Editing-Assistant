@@ -141,38 +141,44 @@ class MaintainerBoundaryTest(unittest.TestCase):
         for token in forbidden:
             self.assertNotIn(token, lowered)
 
-    def test_public_status_records_task_9_and_schedules_task_10(self) -> None:
+    def test_public_status_records_task_10_and_schedules_task_11(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        decision = (ROOT / "docs" / "TASK-9-DECISION.md").read_text(
+        decision = (ROOT / "docs" / "TASK-10-DECISION.md").read_text(
             encoding="utf-8"
         )
-        verification = (ROOT / "docs" / "TASK-9-VERIFICATION.md").read_text(
+        verification = (ROOT / "docs" / "TASK-10-VERIFICATION.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Tasks 1–9", status)
+        self.assertIn("Tasks 1–10", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
         self.assertLess(status.index("Task 7"), status.index("Task 8"))
         self.assertLess(status.index("Task 8"), status.index("Task 9"))
         self.assertLess(status.index("Task 9"), status.index("Task 10"))
-        self.assertIn("Task 9", roadmap)
-        self.assertLess(roadmap.index("Task 9"), roadmap.index("Task 10"))
+        self.assertLess(status.index("Task 10"), status.index("Task 11"))
+        self.assertIn("Task 10", roadmap)
+        self.assertLess(roadmap.index("Task 10"), roadmap.index("Task 11"))
         for authority in (
-            "tritrack paper export --help",
-            "tritrack paper apply --help",
-            "tritrack organize --help",
+            "tritrack run prepare --help",
+            "tritrack run align --help",
+            "tritrack run finish --help",
+            "tritrack run status --help",
         ):
             self.assertIn(authority, tooling)
         for text in (status, roadmap, tooling, readme, verification):
-            self.assertIn("Task 9", text)
-        self.assertIn("exactly four worksheets", decision)
-        self.assertIn("Grouping fixpoint", verification)
+            self.assertIn("Task 10", text)
+        self.assertIn("Selected option: A", decision)
+        self.assertIn("immutable", verification)
+        self.assertIn("story-cut.fcpxml", verification)
+        self.assertIn("tritrack-editing-assistant", verification)
         self.assertIn("no network", verification)
-        self.assertIn("Task 10", status)
-        self.assertIn("Task 10", roadmap)
+        self.assertIn("Task 11", status)
+        self.assertIn("Task 11", roadmap)
+        self.assertNotIn("`validate` and `run` remain planned", status)
+        self.assertNotIn("`tritrack run` | planned", readme)
 
     def test_task_6_5_handoff_is_public_safe_and_bounded(self) -> None:
         handoff = (ROOT / "docs" / "TASK-6.5-HANDOFF.md").read_text(

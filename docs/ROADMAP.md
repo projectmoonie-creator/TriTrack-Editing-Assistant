@@ -28,11 +28,12 @@ here.
 - Task 9: strict cue-addressed grouping, deterministic working-cut compilation,
   and a local XLSX paper-edit round trip with complete reference-grid
   re-derivation. The workbook is a transport; JSON remains authoritative.
+- Task 10: installed immutable `run prepare`／`align`／`finish` bundles,
+  read-only `run status`, deterministic story-ordered FCPXML, and a separate
+  end-user `tritrack-editing-assistant` skill with explicit human gates.
 
 ## Next
 
-- Task 10: implement the installed `run` workflow and create the separate
-  end-user `skills/tritrack-editing-assistant/SKILL.md`.
 - Task 11: expand the release-grade CI matrix and complete the privacy,
   provenance, packaging, and release gates.
 - Task 12: freeze and independently review the alpha candidate.

@@ -10,7 +10,8 @@ or another project's tool state.
 - Full tests: `python -m unittest discover -s tests -v`
 - Lint: `ruff check src tests`
 - Skill validation uses the current Codex `skill-creator` validator against
-  `.agents/skills/tritrack-editing-assistant-maintainer`.
+  both `.agents/skills/tritrack-editing-assistant-maintainer` and
+  `skills/tritrack-editing-assistant`.
 
 ## Local synchronization
 
@@ -141,6 +142,44 @@ or another project's tool state.
   columns are capped from the exact aligned cue count before rectangular cell
   inspection. Inputs are rehashed before temporary-file plus hard-link
   publication; existing outputs and race winners are never overwritten.
+
+## Immutable local run workflow
+
+- `tritrack run prepare --help`, `tritrack run align --help`,
+  `tritrack run finish --help`, and `tritrack run status --help` are the
+  installed command authorities for Task 10 flags.
+- `prepare`, `align`, and `finish` each publish a new absent directory. A
+  bundle is complete only when its canonical `run-manifest.json` is present,
+  lists the exact phase-specific filenames and hashes, and chains the exact
+  prior manifest hashes. Publication reserves the directory, hard-links
+  artifacts, and links the manifest last. No command overwrites or repairs an
+  earlier bundle.
+- Prepared bundles contain doctor, sync-map, transcript-bundle, and string-out
+  artifacts. Aligned bundles contain aligned-transcript and paper-workbook
+  artifacts. Finished bundles contain grouping, working-cut, and story-cut
+  artifacts. Manifests contain no timestamp, mutable stage status, absolute
+  path, transcript text, editor text, command arguments, logs, or credentials.
+- `prepare` calls the existing doctor → sync → transcribe → emit Python
+  functions directly. A doctor receipt with `supported: false` stops before
+  processing. Declared media basenames are globally unique, transcription
+  inputs are a strict subset, and media plus model hashes are rechecked before
+  publication.
+- `align` requires a complete prepared bundle and one explicit
+  `text-revision-v1`. `takes: []` is a valid no-change revision only when the
+  editor deliberately supplies it. The emitted workbook remains transport,
+  not text, timing, or selection authority.
+- `finish` validates the prepared → aligned manifest chain, current media
+  hashes, and workbook binding before applying paper intent, compiling the
+  working cut, and rendering `story-cut.fcpxml`. Story order, cue text, timing,
+  source hashes, sync offsets, and audio-master coverage are re-derived from
+  exact strict artifacts; reserve does not enter the active timeline.
+- `status` is read-only and reports only run ID, phase, next action, completed
+  stage names, and logical artifact hashes. Task 10 makes no network access and
+  does not claim a Final Cut GUI import, DTD result, or round trip.
+- `skills/tritrack-editing-assistant/SKILL.md` is the separate end-user entry
+  point. It uses installed help first and preserves explicit text-revision and
+  paper-edit human gates; the repository-local maintainer skill retains all
+  development and publication authority.
 
 ## Invented quickstart verification
 

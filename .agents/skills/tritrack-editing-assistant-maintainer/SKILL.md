@@ -43,9 +43,9 @@ TriTrack project.
 ## Hold the role firewall
 
 - This skill owns public repository development and maintenance only.
-- The future `skills/tritrack-editing-assistant/SKILL.md` is the end-user
-  product skill. Do not create it before its roadmap task or put maintainer
-  state, task numbers, release authority, or application strategy inside it.
+- `skills/tritrack-editing-assistant/SKILL.md` is the separate installed
+  end-user product skill. Keep maintainer state, task numbers, release
+  authority, and application strategy out of it.
 - Never browse another repository for source, status, media, transcripts,
   journals, templates, credentials, or history. Consume only a separately
   reviewed clean-room intake that has been deliberately handed to the public

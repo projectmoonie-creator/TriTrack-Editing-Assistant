@@ -25,6 +25,16 @@ format follows Keep a Changelog, and releases will use semantic versioning.
   `transcript-bundle-v1`, model/source hash provenance, deterministic cue
   canonicalization and silence outcomes, structural artifact guards, input
   change detection, bounded temporary evidence, and atomic no-overwrite output.
+- Cue-addressed revision promotion, strict grouping and working-cut JSON, and a
+  four-worksheet paper-edit transport that preserves aligned text and timing
+  authority.
+- Task 10 immutable prepared／aligned／finished run bundles with exact manifest
+  chains, fixed artifact sets, manifest-last publication, and read-only status.
+- Deterministic story-ordered FCPXML projection with authoritative cue text and
+  timing re-derivation, paired-source offsets, audio-master coverage, and
+  reserve exclusion.
+- Separate `tritrack-editing-assistant` end-user skill with installed-help
+  discovery and explicit text-revision and paper-edit human gates.
 
 ### Fixed
 

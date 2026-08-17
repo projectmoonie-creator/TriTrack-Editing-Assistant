@@ -26,9 +26,8 @@ planned evidence before mutating project state.
 
 - `tritrack-editing-assistant-maintainer` owns this repository's development
   and maintenance.
-- The later `tritrack-editing-assistant` skill is an installed end-user
-  product surface. It must contain no maintainer task state or release
-  authority.
+- `skills/tritrack-editing-assistant/SKILL.md` is the installed end-user
+  product surface. It contains no maintainer task state or release authority.
 - Private production orchestration is a different project. Do not scan its
   repositories or import its status, media, transcripts, journals, templates,
   credentials, or history. Accept only reviewed clean-room intake with exact
