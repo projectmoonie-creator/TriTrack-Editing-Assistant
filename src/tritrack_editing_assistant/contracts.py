@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from functools import cache
 from importlib import resources
+from types import MappingProxyType
 
 import jsonschema
 
@@ -46,3 +48,31 @@ def validate_contract(name: str, payload: object) -> None:
 
     validator = jsonschema.Draft202012Validator(load_schema(name))
     validator.validate(payload)
+
+
+@cache
+def contract_names_by_schema_version() -> Mapping[str, str]:
+    """Return the closed installed schema-version to contract-name registry."""
+
+    mapping: dict[str, str] = {}
+    for name in sorted(CONTRACT_NAMES):
+        schema = load_schema(name)
+        try:
+            version = schema["properties"]["schemaVersion"]["const"]
+        except (KeyError, TypeError) as error:
+            raise ValueError("TRITRACK_CONTRACT_REGISTRY_INVALID") from error
+        if not isinstance(version, str) or version in mapping:
+            raise ValueError("TRITRACK_CONTRACT_REGISTRY_INVALID")
+        mapping[version] = name
+    return MappingProxyType(mapping)
+
+
+def contract_name_for_schema_version(schema_version: object) -> str:
+    """Resolve only an exact version declared by one installed contract."""
+
+    if not isinstance(schema_version, str):
+        raise ValueError("TRITRACK_CONTRACT_UNKNOWN")
+    try:
+        return contract_names_by_schema_version()[schema_version]
+    except KeyError as error:
+        raise ValueError("TRITRACK_CONTRACT_UNKNOWN") from error
