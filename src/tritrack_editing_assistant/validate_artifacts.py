@@ -12,7 +12,7 @@ from pathlib import Path
 
 from jsonschema import ValidationError
 
-from . import __version__, contracts, doctor, emit_fcpxml, paper_edit
+from . import __version__, contracts, doctor, emit_fcpxml, paper_edit, run_workflow
 
 MAX_VALIDATION_ARTIFACT_BYTES = 16 * 1024 * 1024
 
@@ -176,4 +176,24 @@ def validate_paper_artifacts(
         details={
             "workbookSchemaVersion": validated.workbook_schema_version,
         },
+    )
+
+
+def validate_run_bundle(run_dir: Path) -> dict[str, object]:
+    """Validate and summarize one complete immutable run bundle."""
+
+    bundle, run_summary = run_workflow.inspect_run(run_dir)
+    stages = run_summary["stages"]
+    artifacts = run_summary["artifacts"]
+    assert isinstance(stages, list)
+    assert isinstance(artifacts, dict)
+    return _validation_summary(
+        kind="run",
+        scope="complete-run-bundle",
+        hashes={"manifest": bundle.manifest_sha256},
+        counts={
+            "artifactCount": len(artifacts),
+            "stageCount": len(stages),
+        },
+        details={"runSummary": run_summary},
     )

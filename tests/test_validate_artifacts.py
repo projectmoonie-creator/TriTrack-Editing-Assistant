@@ -12,10 +12,12 @@ from unittest import mock
 
 from tests.test_contracts import VALID_CONTRACTS
 from tests.test_emit_fcpxml import media, sync_payload
+from tests.test_run_workflow import aligned_bundle_files, aligned_manifest, sha256
 from tritrack_editing_assistant import (
     contracts,
     emit_fcpxml,
     process,
+    run_workflow,
     validate_artifacts,
 )
 
@@ -255,6 +257,77 @@ class FcpxmlValidationTest(unittest.TestCase):
                     profile_id="uhd-2997-ndf-fcpxml-1.14",
                     binding_id="basic-title-v1",
                 )
+
+
+class RunValidationTest(unittest.TestCase):
+    def write_aligned_bundle(self, root: Path) -> tuple[Path, bytes, dict[str, bytes]]:
+        run = root / "aligned-run"
+        run.mkdir()
+        files = aligned_bundle_files()
+        for name, encoded in files.items():
+            (run / name).write_bytes(encoded)
+        manifest_bytes = run_workflow.encode_manifest(aligned_manifest(files))
+        (run / "run-manifest.json").write_bytes(manifest_bytes)
+        return run, manifest_bytes, files
+
+    def test_shares_complete_run_authority_and_exact_status_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, manifest_bytes, files = self.write_aligned_bundle(root)
+            entries_before = {path.name: path.read_bytes() for path in run.iterdir()}
+
+            bundle, status = run_workflow.inspect_run(run)
+            summary = validate_artifacts.validate_run_bundle(run)
+
+            self.assertEqual(status, run_workflow.status_run(run))
+            self.assertEqual(bundle.manifest_sha256, sha256(manifest_bytes))
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.validate-summary/v1",
+                    "toolVersion": "0.1.0a0",
+                    "artifactKind": "run",
+                    "validationScope": "complete-run-bundle",
+                    "hashes": {"manifest": sha256(manifest_bytes)},
+                    "counts": {"artifactCount": 2, "stageCount": 2},
+                    "details": {"runSummary": status},
+                },
+            )
+            self.assertEqual(
+                entries_before,
+                {path.name: path.read_bytes() for path in run.iterdir()},
+            )
+            self.assertEqual(
+                summary["details"]["runSummary"]["artifacts"],
+                {
+                    "alignedTranscript": sha256(files["aligned-transcript.json"]),
+                    "paperWorkbook": sha256(files["paper-edit.xlsx"]),
+                },
+            )
+            self.assertNotIn(str(root), json.dumps(summary))
+            self.assertNotIn("Invented words", json.dumps(summary))
+
+    def test_inspection_detects_change_between_initial_load_and_recheck(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _, _ = self.write_aligned_bundle(root)
+            real_load = run_workflow.load_bundle
+            load_count = 0
+
+            def changing_load(*args, **kwargs):
+                nonlocal load_count
+                loaded = real_load(*args, **kwargs)
+                load_count += 1
+                if load_count == 1:
+                    (run / "paper-edit.xlsx").write_bytes(b"changed")
+                return loaded
+
+            with mock.patch.object(
+                run_workflow, "load_bundle", side_effect=changing_load
+            ), self.assertRaisesRegex(
+                ValueError, "^TRITRACK_RUN_INPUT_CHANGED$"
+            ):
+                run_workflow.inspect_run(run)
 
 
 if __name__ == "__main__":

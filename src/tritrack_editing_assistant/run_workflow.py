@@ -961,7 +961,17 @@ def finish_run(
     return summarize_bundle(publish_bundle(Path(output_dir), build))
 
 
+def inspect_run(
+    run_dir: Path,
+) -> tuple[LoadedRunBundle, dict[str, object]]:
+    """Validate, recheck, and summarize one run without writing anything."""
+
+    bundle = load_bundle(Path(run_dir))
+    _require_bundle_unchanged(bundle)
+    return bundle, summarize_bundle(bundle)
+
+
 def status_run(run_dir: Path) -> dict[str, object]:
     """Validate and summarize one run bundle without writing anything."""
 
-    return summarize_bundle(load_bundle(Path(run_dir)))
+    return inspect_run(run_dir)[1]
