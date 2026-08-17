@@ -18,6 +18,7 @@ from . import paper_edit as paper_module
 from . import run_workflow as run_module
 from . import sync_scan as sync_module
 from . import transcribe_takes as transcribe_module
+from . import validate_artifacts as validate_module
 
 EXIT_OK = 0
 EXIT_USAGE = 64
@@ -27,6 +28,18 @@ EXIT_OUTPUT_EXISTS = 73
 EXIT_IO = 74
 EXIT_TEMPORARY = 75
 EXIT_POLICY = 78
+
+
+class CliUsageError(ValueError):
+    """Private signal for sanitized command-line usage failures."""
+
+
+class TriTrackArgumentParser(argparse.ArgumentParser):
+    """Argument parser that preserves the public exit-code contract."""
+
+    def error(self, message: str) -> None:
+        del message
+        raise CliUsageError("TRITRACK_USAGE")
 
 
 COMPONENTS = (
@@ -594,8 +607,83 @@ def _run_status(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _validate_error_exit(code: str) -> int:
+    if code in {
+        "TRITRACK_VALIDATE_INPUT_UNREADABLE",
+        "TRITRACK_PAPER_INPUT_UNREADABLE",
+        "TRITRACK_RUN_INPUT_UNREADABLE",
+    }:
+        return EXIT_IO
+    if code in {
+        "TRITRACK_CONTRACT_REGISTRY_INVALID",
+        "TRITRACK_PROFILE_UNKNOWN",
+        "TRITRACK_TITLE_BINDING_UNKNOWN",
+    }:
+        return EXIT_POLICY
+    return EXIT_DATA
+
+
+def _print_validation_summary(
+    summary: dict[str, object], *, as_json: bool
+) -> None:
+    if as_json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+    print(
+        f"VALIDATION\t{summary['artifactKind']}\t"
+        f"{summary['validationScope']}"
+    )
+    hashes = summary["hashes"]
+    counts = summary["counts"]
+    details = summary["details"]
+    assert isinstance(hashes, dict)
+    assert isinstance(counts, dict)
+    assert isinstance(details, dict)
+    for name in sorted(hashes):
+        print(f"HASH\t{name}\t{hashes[name]}")
+    for name in sorted(counts):
+        print(f"COUNT\t{name}\t{counts[name]}")
+    for name in sorted(details):
+        encoded = json.dumps(
+            details[name],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        print(f"DETAIL\t{name}\t{encoded}")
+
+
+def _run_validate(arguments: argparse.Namespace) -> int:
+    try:
+        if arguments.validate_command == "contract":
+            summary = validate_module.validate_contract_artifact(
+                arguments.artifact
+            )
+        elif arguments.validate_command == "fcpxml":
+            summary = validate_module.validate_fcpxml_artifact(
+                arguments.artifact,
+                profile_id=arguments.profile,
+                binding_id=arguments.binding,
+            )
+        elif arguments.validate_command == "paper":
+            summary = validate_module.validate_paper_artifacts(
+                arguments.aligned,
+                arguments.workbook,
+            )
+        elif arguments.validate_command == "run":
+            summary = validate_module.validate_run_bundle(arguments.run_dir)
+        else:
+            raise CliUsageError("TRITRACK_USAGE")
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _validate_error_exit(code)
+    _print_validation_summary(summary, as_json=arguments.json)
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = TriTrackArgumentParser(
         prog="tritrack",
         description="Local-first Final Cut editing-assistant workflow",
     )
@@ -955,18 +1043,61 @@ def build_parser() -> argparse.ArgumentParser:
     run_status.add_argument("--json", action="store_true")
     run_status.set_defaults(handler=_run_status)
 
-    planned_commands = {
-        "validate": "validate generated output",
-    }
-    for name, help_text in planned_commands.items():
-        command_parser = subparsers.add_parser(name, help=help_text)
-        command_parser.set_defaults(handler=_planned_command)
+    validate = subparsers.add_parser(
+        "validate",
+        help="validate one public artifact without writing",
+    )
+    validate_subparsers = validate.add_subparsers(
+        dest="validate_command",
+        required=True,
+    )
+
+    validate_contract = validate_subparsers.add_parser(
+        "contract",
+        help="check one JSON artifact against its installed contract",
+    )
+    validate_contract.add_argument("--artifact", required=True, type=Path)
+    validate_contract.add_argument("--json", action="store_true")
+    validate_contract.set_defaults(handler=_run_validate)
+
+    validate_fcpxml = validate_subparsers.add_parser(
+        "fcpxml",
+        help="check one FCPXML artifact against installed authorities",
+    )
+    validate_fcpxml.add_argument("--artifact", required=True, type=Path)
+    validate_fcpxml.add_argument("--profile", required=True)
+    validate_fcpxml.add_argument("--binding", required=True)
+    validate_fcpxml.add_argument("--json", action="store_true")
+    validate_fcpxml.set_defaults(handler=_run_validate)
+
+    validate_paper = validate_subparsers.add_parser(
+        "paper",
+        help="check one workbook against exact aligned authority",
+    )
+    validate_paper.add_argument("--aligned", required=True, type=Path)
+    validate_paper.add_argument("--workbook", required=True, type=Path)
+    validate_paper.add_argument("--json", action="store_true")
+    validate_paper.set_defaults(handler=_run_validate)
+
+    validate_run = validate_subparsers.add_parser(
+        "run",
+        help="check one complete immutable run bundle",
+    )
+    validate_run.add_argument(
+        "--run", dest="run_dir", required=True, type=Path
+    )
+    validate_run.add_argument("--json", action="store_true")
+    validate_run.set_defaults(handler=_run_validate)
 
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    arguments = build_parser().parse_args(argv)
+    try:
+        arguments = build_parser().parse_args(argv)
+    except CliUsageError:
+        print(json.dumps({"error": "TRITRACK_USAGE"}, ensure_ascii=False))
+        return EXIT_USAGE
     return arguments.handler(arguments)
 
 

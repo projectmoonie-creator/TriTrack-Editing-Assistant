@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.test_contracts import VALID_CONTRACTS
 from tritrack_editing_assistant import cli, run_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -975,6 +976,213 @@ class CliSmokeTest(unittest.TestCase):
                 {"error": "TRITRACK_OUTPUT_EXISTS"},
             )
             self.assertEqual(output.read_text(encoding="utf-8"), "sentinel")
+
+
+class ValidateCliTest(unittest.TestCase):
+    def run_cli_unchecked(self, *args: str) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(ROOT / "src")
+        return subprocess.run(
+            [sys.executable, "-m", "tritrack_editing_assistant.cli", *args],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            env=environment,
+        )
+
+    def test_help_exposes_exact_four_read_only_modes(self) -> None:
+        expected = {
+            "contract": ("--artifact", "--json"),
+            "fcpxml": ("--artifact", "--profile", "--binding", "--json"),
+            "paper": ("--aligned", "--workbook", "--json"),
+            "run": ("--run", "--json"),
+        }
+        parent = self.run_cli_unchecked("validate", "--help")
+        self.assertEqual(parent.returncode, 0, parent.stderr)
+        for mode in expected:
+            self.assertIn(mode, parent.stdout)
+        for mode, flags in expected.items():
+            with self.subTest(mode=mode):
+                completed = self.run_cli_unchecked("validate", mode, "--help")
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                for flag in flags:
+                    self.assertIn(flag, completed.stdout)
+                for forbidden in (
+                    "output",
+                    "repair",
+                    "network",
+                    "provider",
+                    "credential",
+                    "dtd",
+                    "media-probe",
+                ):
+                    self.assertNotIn(forbidden, completed.stdout.lower())
+
+    def test_contract_json_and_human_summaries_are_path_free(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifact = root / "private-name.json"
+            encoded = (
+                json.dumps(
+                    VALID_CONTRACTS["grouping-v1"],
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            artifact.write_bytes(encoded)
+
+            as_json = self.run_cli_unchecked(
+                "validate", "contract", "--artifact", str(artifact), "--json"
+            )
+            human = self.run_cli_unchecked(
+                "validate", "contract", "--artifact", str(artifact)
+            )
+
+            self.assertEqual(as_json.returncode, 0, as_json.stderr)
+            summary = json.loads(as_json.stdout)
+            self.assertEqual(summary["artifactKind"], "contract")
+            self.assertEqual(summary["validationScope"], "contract")
+            self.assertEqual(
+                summary["hashes"]["artifact"],
+                hashlib.sha256(encoded).hexdigest(),
+            )
+            self.assertEqual(human.returncode, 0, human.stderr)
+            self.assertEqual(
+                human.stdout.splitlines(),
+                [
+                    "VALIDATION\tcontract\tcontract",
+                    f"HASH\tartifact\t{hashlib.sha256(encoded).hexdigest()}",
+                    "DETAIL\tcontractName\t\"grouping-v1\"",
+                    "DETAIL\tcontractSchemaVersion\t\"tritrack.grouping/v1\"",
+                ],
+            )
+            for output in (as_json.stdout, human.stdout):
+                self.assertNotIn(str(root), output)
+                self.assertNotIn("What changed?", output)
+
+    def test_dispatches_fcpxml_paper_and_run_with_exact_arguments(self) -> None:
+        base_summary = {
+            "schemaVersion": "tritrack.validate-summary/v1",
+            "toolVersion": "0.1.0a0",
+            "artifactKind": "invented",
+            "validationScope": "invented-scope",
+            "hashes": {},
+            "counts": {},
+            "details": {},
+        }
+        with (
+            mock.patch.object(
+                cli.validate_module,
+                "validate_fcpxml_artifact",
+                return_value=base_summary,
+            ) as fcpxml,
+            mock.patch.object(
+                cli.validate_module,
+                "validate_paper_artifacts",
+                return_value=base_summary,
+            ) as paper,
+            mock.patch.object(
+                cli.validate_module,
+                "validate_run_bundle",
+                return_value=base_summary,
+            ) as run,
+        ):
+            for arguments in (
+                [
+                    "validate",
+                    "fcpxml",
+                    "--artifact",
+                    "story.fcpxml",
+                    "--profile",
+                    "profile-id",
+                    "--binding",
+                    "binding-id",
+                    "--json",
+                ],
+                [
+                    "validate",
+                    "paper",
+                    "--aligned",
+                    "aligned.json",
+                    "--workbook",
+                    "paper.xlsx",
+                    "--json",
+                ],
+                ["validate", "run", "--run", "finished-run", "--json"],
+            ):
+                with self.subTest(arguments=arguments):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(cli.main(arguments), 0)
+                    self.assertEqual(json.loads(output.getvalue()), base_summary)
+
+        fcpxml.assert_called_once_with(
+            Path("story.fcpxml"),
+            profile_id="profile-id",
+            binding_id="binding-id",
+        )
+        paper.assert_called_once_with(Path("aligned.json"), Path("paper.xlsx"))
+        run.assert_called_once_with(Path("finished-run"))
+
+    def test_usage_data_io_and_policy_failures_are_stable_and_sanitized(self) -> None:
+        usage = self.run_cli_unchecked("validate", "contract")
+        self.assertEqual(usage.returncode, 64)
+        self.assertEqual(json.loads(usage.stdout), {"error": "TRITRACK_USAGE"})
+        self.assertEqual(usage.stderr, "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            malformed = root / "private-name.json"
+            malformed.write_text("{private text", encoding="utf-8")
+            data = self.run_cli_unchecked(
+                "validate", "contract", "--artifact", str(malformed)
+            )
+            missing = self.run_cli_unchecked(
+                "validate",
+                "contract",
+                "--artifact",
+                str(root / "missing.json"),
+            )
+            xml = root / "story.fcpxml"
+            xml.write_text("invented", encoding="utf-8")
+            policy = self.run_cli_unchecked(
+                "validate",
+                "fcpxml",
+                "--artifact",
+                str(xml),
+                "--profile",
+                "unknown-profile",
+                "--binding",
+                "basic-title-v1",
+            )
+
+            self.assertEqual(data.returncode, 65)
+            self.assertEqual(
+                json.loads(data.stdout), {"error": "TRITRACK_VALIDATE_JSON_INVALID"}
+            )
+            self.assertEqual(missing.returncode, 74)
+            self.assertEqual(
+                json.loads(missing.stdout),
+                {"error": "TRITRACK_VALIDATE_INPUT_UNREADABLE"},
+            )
+            self.assertEqual(policy.returncode, 78)
+            self.assertEqual(
+                json.loads(policy.stdout), {"error": "TRITRACK_PROFILE_UNKNOWN"}
+            )
+            for completed in (data, missing, policy):
+                self.assertEqual(completed.stderr, "")
+                self.assertNotIn(str(root), completed.stdout)
+                self.assertNotIn("private text", completed.stdout)
+                self.assertNotIn("Traceback", completed.stdout)
+
+    def test_validate_does_not_change_component_registry(self) -> None:
+        self.assertEqual(len(cli.COMPONENTS), 11)
+        self.assertFalse(
+            any(component["command"] == "validate" for component in cli.COMPONENTS)
+        )
 
 
 if __name__ == "__main__":
