@@ -169,12 +169,18 @@ def build_manifest(
 
     try:
         spec = PHASE_SPECS[phase]
+        expected_artifacts = {logical_name for logical_name, _ in spec.artifacts}
+        if set(artifacts) != expected_artifacts:
+            raise ValueError
         source_copies = [copy.deepcopy(dict(source)) for source in sources]
         source_copies.sort(key=lambda source: (source["camera"], source["mediaId"]))
         stage_by_name = {
             stage["name"]: copy.deepcopy(dict(stage)) for stage in stages
         }
-        if len(stage_by_name) != len(stages):
+        if (
+            len(stage_by_name) != len(stages)
+            or set(stage_by_name) != set(spec.stages)
+        ):
             raise ValueError
         artifact_copies = {
             logical_name: copy.deepcopy(dict(artifacts[logical_name]))

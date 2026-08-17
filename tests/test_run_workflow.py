@@ -229,6 +229,26 @@ class RunManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "TRITRACK_RUN_MANIFEST_INVALID"):
             self.build(stages=stages)
 
+    def test_rejects_extra_artifact_and_stage_facts(self) -> None:
+        artifacts = prepared_artifacts()
+        artifacts["foreign"] = {
+            "fileName": "foreign.json",
+            "sha256": "9" * 64,
+        }
+        with self.assertRaisesRegex(ValueError, "TRITRACK_RUN_MANIFEST_INVALID"):
+            self.build(artifacts=artifacts)
+
+        stages = prepared_stages()
+        stages.append(
+            {
+                "name": "foreign",
+                "action": "foreign",
+                "outputHashes": {"foreign": "9" * 64},
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "TRITRACK_RUN_MANIFEST_INVALID"):
+            self.build(stages=stages)
+
         stages = prepared_stages()
         stages[0]["outputHashes"]["stringOut"] = "9" * 64
         with self.assertRaisesRegex(ValueError, "TRITRACK_RUN_MANIFEST_INVALID"):
