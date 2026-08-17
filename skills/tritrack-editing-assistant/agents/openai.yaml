@@ -1,0 +1,4 @@
+interface:
+  display_name: "TriTrack Editing Assistant"
+  short_description: "Guide immutable local Final Cut editing runs"
+  default_prompt: "Use $tritrack-editing-assistant to guide this local edit through immutable TriTrack run stages."

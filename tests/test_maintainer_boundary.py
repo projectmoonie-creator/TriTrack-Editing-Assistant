@@ -87,10 +87,59 @@ class MaintainerBoundaryTest(unittest.TestCase):
                 self.assertNotIn(token, text, f"{path}: leaked {token!r}")
 
     def test_maintainer_and_end_user_skills_are_distinct(self) -> None:
-        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("name: tritrack-editing-assistant-maintainer", skill)
-        self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", skill)
-        self.assertFalse((ROOT / "skills" / "tritrack-editing-assistant").exists())
+        maintainer = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        end_user_root = ROOT / "skills" / "tritrack-editing-assistant"
+        end_user = (end_user_root / "SKILL.md").read_text(encoding="utf-8")
+        metadata = (end_user_root / "agents" / "openai.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("name: tritrack-editing-assistant-maintainer", maintainer)
+        self.assertIn("$tritrack-editing-assistant-maintainer OSS 開工", maintainer)
+        self.assertIn("name: tritrack-editing-assistant\n", end_user)
+        self.assertIn("$tritrack-editing-assistant", metadata)
+        self.assertIn('display_name: "TriTrack Editing Assistant"', metadata)
+
+        for command in (
+            "tritrack run --help",
+            "tritrack run prepare --help",
+            "tritrack run align --help",
+            "tritrack run finish --help",
+            "tritrack run status --help",
+        ):
+            self.assertIn(command, end_user)
+        for required in (
+            "text-revision human gate",
+            "paper-edit human gate",
+            "takes: []",
+            "Questions",
+            "Selections",
+            "transport, not authority",
+            "absent output directory",
+            "Keep media",
+            "strict aligned transcript",
+        ):
+            self.assertIn(required, end_user)
+
+        lowered = end_user.lower()
+        forbidden = (
+            "tritrack-editing-assistant-maintainer",
+            "task 10",
+            "standing grant",
+            "branch",
+            "release",
+            "tester",
+            "moonie",
+            "subtitle studio",
+            "/" + "users" + "/",
+            "api_key",
+            "credential",
+            "provider",
+            "upload",
+            "run_workflow",
+            ".py",
+        )
+        for token in forbidden:
+            self.assertNotIn(token, lowered)
 
     def test_public_status_records_task_9_and_schedules_task_10(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
