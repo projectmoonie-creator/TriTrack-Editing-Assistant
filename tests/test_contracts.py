@@ -192,13 +192,51 @@ VALID_CONTRACTS = {
         "toolVersion": "0.1.0a0",
         "runId": "run-001",
         "profileId": "uhd-2997-ndf-fcpxml-1.14",
+        "bindingId": "basic-title-v1",
+        "phase": "prepared",
+        "nextAction": "provide-revision",
+        "manifestChain": [],
+        "sources": [
+            {
+                "camera": "A",
+                "mediaId": "A-001.MP4",
+                "sha256": "a" * 64,
+                "transcribed": True,
+            }
+        ],
+        "artifacts": {
+            "doctorReceipt": {"fileName": "doctor.json", "sha256": "b" * 64},
+            "syncMap": {"fileName": "sync-map.json", "sha256": "c" * 64},
+            "transcriptBundle": {
+                "fileName": "transcript-bundle.json",
+                "sha256": "d" * 64,
+            },
+            "stringOut": {
+                "fileName": "string-out.fcpxml",
+                "sha256": "e" * 64,
+            },
+        },
         "stages": [
             {
+                "name": "doctor",
+                "inputHashes": {"profile": "f" * 64},
+                "outputHashes": {"doctorReceipt": "b" * 64},
+            },
+            {
                 "name": "sync",
-                "status": "completed",
-                "inputHashes": {"cameraA": "a" * 64, "cameraB": "b" * 64},
-                "receiptSha256": "c" * 64,
-            }
+                "inputHashes": {"sourceSet": "1" * 64},
+                "outputHashes": {"syncMap": "c" * 64},
+            },
+            {
+                "name": "transcribe",
+                "inputHashes": {"transcribedSources": "2" * 64},
+                "outputHashes": {"transcriptBundle": "d" * 64},
+            },
+            {
+                "name": "emit",
+                "inputHashes": {"syncMap": "c" * 64},
+                "outputHashes": {"stringOut": "e" * 64},
+            },
         ],
     },
     "provider-receipt-v1": {
@@ -326,6 +364,42 @@ class ContractValidationTest(unittest.TestCase):
                 self.assertRaises(ValidationError),
             ):
                 contracts.validate_contract(name, payload)
+
+    def test_task_10_manifest_rejects_mutable_or_phase_inconsistent_state(self):
+        invalid_cases = []
+
+        mutable_stage = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        mutable_stage["stages"][0]["status"] = "running"
+        invalid_cases.append(mutable_stage)
+
+        timestamped = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        timestamped["createdAt"] = "2026-08-17T00:00:00Z"
+        invalid_cases.append(timestamped)
+
+        wrong_next_action = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        wrong_next_action["nextAction"] = "complete"
+        invalid_cases.append(wrong_next_action)
+
+        wrong_chain_length = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        wrong_chain_length["manifestChain"] = ["9" * 64]
+        invalid_cases.append(wrong_chain_length)
+
+        extra_artifact = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        extra_artifact["artifacts"]["workingCut"] = {
+            "fileName": "working-cut.json",
+            "sha256": "8" * 64,
+        }
+        invalid_cases.append(extra_artifact)
+
+        duplicate_source = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+        duplicate_source["sources"].append(
+            copy.deepcopy(duplicate_source["sources"][0])
+        )
+        invalid_cases.append(duplicate_source)
+
+        for payload in invalid_cases:
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                contracts.validate_contract("run-manifest-v1", payload)
 
 
 if __name__ == "__main__":

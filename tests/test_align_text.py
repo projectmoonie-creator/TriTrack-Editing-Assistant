@@ -130,6 +130,26 @@ class PureCueAlignmentTest(unittest.TestCase):
             },
         )
 
+    def test_accepts_explicit_no_change_revision(self) -> None:
+        revision = invented_revision()
+        revision["takes"] = []
+
+        aligned = align_text.build_aligned_transcript(
+            invented_transcript(),
+            revision,
+            source_bundle_sha256=SOURCE_BUNDLE_SHA,
+            revision_sha256=REVISION_SHA,
+        )
+
+        validate_contract("aligned-transcript-v1", aligned)
+        completed = next(
+            take for take in aligned["takes"] if take["status"] == "completed"
+        )
+        self.assertEqual(
+            [cue["disposition"] for cue in completed["cues"]],
+            ["original", "original"],
+        )
+
     def test_rejects_bundle_hash_and_language_mismatch(self) -> None:
         bad_hash = invented_revision()
         bad_hash["sourceBundleSha256"] = "f" * 64
