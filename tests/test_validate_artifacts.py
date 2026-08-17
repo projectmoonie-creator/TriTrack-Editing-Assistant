@@ -11,7 +11,13 @@ from pathlib import Path
 from unittest import mock
 
 from tests.test_contracts import VALID_CONTRACTS
-from tritrack_editing_assistant import contracts, validate_artifacts
+from tests.test_emit_fcpxml import media, sync_payload
+from tritrack_editing_assistant import (
+    contracts,
+    emit_fcpxml,
+    process,
+    validate_artifacts,
+)
 
 
 def encode_json(payload: object) -> bytes:
@@ -98,11 +104,10 @@ class ContractValidationTest(unittest.TestCase):
             side_effect=lambda name: duplicate
             if name == "sync-map-v1"
             else profile,
+        ), self.assertRaisesRegex(
+            ValueError, "^TRITRACK_CONTRACT_REGISTRY_INVALID$"
         ):
-            with self.assertRaisesRegex(
-                ValueError, "^TRITRACK_CONTRACT_REGISTRY_INVALID$"
-            ):
-                contracts.contract_names_by_schema_version()
+            contracts.contract_names_by_schema_version()
 
     def test_detects_late_contract_change_without_leaking_path_or_text(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -118,15 +123,138 @@ class ContractValidationTest(unittest.TestCase):
 
             with mock.patch.object(
                 contracts, "validate_contract", side_effect=changing_validate
-            ):
-                with self.assertRaisesRegex(
-                    ValueError, "^TRITRACK_VALIDATE_INPUT_CHANGED$"
-                ) as raised:
-                    validate_artifacts.validate_contract_artifact(artifact)
+            ), self.assertRaisesRegex(
+                ValueError, "^TRITRACK_VALIDATE_INPUT_CHANGED$"
+            ) as raised:
+                validate_artifacts.validate_contract_artifact(artifact)
 
             message = str(raised.exception)
             self.assertNotIn(str(root), message)
             self.assertNotIn("What changed?", message)
+
+
+class FcpxmlValidationTest(unittest.TestCase):
+    def render(self, root: Path) -> str:
+        return emit_fcpxml.render_fcpxml(
+            sync_payload(),
+            media(root),
+            profile_id="uhd-2997-ndf-fcpxml-1.14",
+            binding_id="basic-title-v1",
+            metadata=emit_fcpxml.ProjectMetadata("Invented Event", "Invented Cut"),
+        )
+
+    def test_validates_exact_bytes_with_installed_profile_and_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifact = root / "story.fcpxml"
+            encoded = self.render(root).encode("utf-8")
+            artifact.write_bytes(encoded)
+
+            with mock.patch.object(process, "run_bounded") as subprocess_call:
+                summary = validate_artifacts.validate_fcpxml_artifact(
+                    artifact,
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                )
+
+            subprocess_call.assert_not_called()
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.validate-summary/v1",
+                    "toolVersion": "0.1.0a0",
+                    "artifactKind": "fcpxml",
+                    "validationScope": "structural-profile",
+                    "hashes": {"artifact": hashlib.sha256(encoded).hexdigest()},
+                    "counts": {},
+                    "details": {
+                        "profileId": "uhd-2997-ndf-fcpxml-1.14",
+                        "bindingId": "basic-title-v1",
+                    },
+                },
+            )
+            self.assertEqual(artifact.read_bytes(), encoded)
+            self.assertNotIn(str(root), json.dumps(summary))
+
+    def test_rejects_profile_binding_xml_and_file_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            valid = self.render(root)
+            artifact = root / "story.fcpxml"
+            artifact.write_text(valid, encoding="utf-8")
+
+            for keyword, value in (
+                ("profile_id", "unknown-profile"),
+                ("binding_id", "unknown-binding"),
+            ):
+                arguments = {
+                    "profile_id": "uhd-2997-ndf-fcpxml-1.14",
+                    "binding_id": "basic-title-v1",
+                }
+                arguments[keyword] = value
+                with self.subTest(keyword=keyword), self.assertRaisesRegex(
+                    ValueError, "^TRITRACK_PROFILE_UNKNOWN"
+                ):
+                    validate_artifacts.validate_fcpxml_artifact(
+                        artifact, **arguments
+                    )
+
+            artifact.write_text(
+                valid.replace('width="3840"', 'width="1920"'),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError, "^TRITRACK_FCPXML_PROFILE_MISMATCH$"
+            ):
+                validate_artifacts.validate_fcpxml_artifact(
+                    artifact,
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                )
+
+            artifact.write_bytes(b"\xff\xfe")
+            with self.assertRaisesRegex(
+                ValueError, "^TRITRACK_VALIDATE_FCPXML_INVALID$"
+            ):
+                validate_artifacts.validate_fcpxml_artifact(
+                    artifact,
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                )
+
+            symlink = root / "link.fcpxml"
+            symlink.symlink_to(artifact)
+            with self.assertRaisesRegex(
+                ValueError, "^TRITRACK_VALIDATE_INPUT_UNREADABLE$"
+            ):
+                validate_artifacts.validate_fcpxml_artifact(
+                    symlink,
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                )
+
+    def test_detects_late_fcpxml_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifact = root / "story.fcpxml"
+            valid = self.render(root)
+            artifact.write_text(valid, encoding="utf-8")
+            real_validate = emit_fcpxml.validate_fcpxml
+
+            def changing_validate(*args, **kwargs) -> None:
+                real_validate(*args, **kwargs)
+                artifact.write_text(valid + " ", encoding="utf-8")
+
+            with mock.patch.object(
+                emit_fcpxml, "validate_fcpxml", side_effect=changing_validate
+            ), self.assertRaisesRegex(
+                ValueError, "^TRITRACK_VALIDATE_INPUT_CHANGED$"
+            ):
+                validate_artifacts.validate_fcpxml_artifact(
+                    artifact,
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                )
 
 
 if __name__ == "__main__":

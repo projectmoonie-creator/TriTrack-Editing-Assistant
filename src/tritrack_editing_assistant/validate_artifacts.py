@@ -12,7 +12,7 @@ from pathlib import Path
 
 from jsonschema import ValidationError
 
-from . import __version__, contracts
+from . import __version__, contracts, doctor, emit_fcpxml
 
 MAX_VALIDATION_ARTIFACT_BYTES = 16 * 1024 * 1024
 
@@ -124,4 +124,30 @@ def validate_contract_artifact(path: Path) -> dict[str, object]:
             "contractName": contract_name,
             "contractSchemaVersion": schema_version,
         },
+    )
+
+
+def validate_fcpxml_artifact(
+    path: Path,
+    *,
+    profile_id: str,
+    binding_id: str,
+) -> dict[str, object]:
+    """Validate one FCPXML file against exact installed profile authorities."""
+
+    artifact = _load_regular_artifact(path)
+    try:
+        text = artifact.encoded.decode("utf-8", errors="strict")
+    except UnicodeError as error:
+        raise ValueError("TRITRACK_VALIDATE_FCPXML_INVALID") from error
+    profile = doctor.load_profile(profile_id)
+    binding = doctor.load_title_binding(binding_id)
+    emit_fcpxml.validate_fcpxml(text, profile=profile, binding=binding)
+    _verify_unchanged(artifact)
+    return _validation_summary(
+        kind="fcpxml",
+        scope="structural-profile",
+        hashes={"artifact": artifact.sha256},
+        counts={},
+        details={"profileId": profile_id, "bindingId": binding_id},
     )
