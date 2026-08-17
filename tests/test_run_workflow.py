@@ -7,12 +7,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from openpyxl import load_workbook
+
 from tritrack_editing_assistant import (
     align_text,
     doctor,
     emit_fcpxml,
+    organizer,
     paper_edit,
     run_workflow,
+    story_fcpxml,
     sync_scan,
     transcribe_takes,
 )
@@ -807,6 +811,242 @@ class PrepareAlignTransitionTest(unittest.TestCase):
                     root / "missing-revision.json",
                     output_dir=root / "aligned",
                 )
+
+
+class FinishStatusTransitionTest(PrepareAlignTransitionTest):
+    def prepare_and_align(
+        self, root: Path
+    ) -> tuple[
+        run_workflow.LoadedRunBundle,
+        run_workflow.LoadedRunBundle,
+        list[sync_scan.MediaSource],
+    ]:
+        prepared, sources, _ = self.prepare(root)
+        transcript = prepared.artifacts["transcriptBundle"]
+        revision = {
+            "schemaVersion": "tritrack.text-revision/v1",
+            "sourceBundleSha256": transcript.sha256,
+            "language": "en",
+            "takes": [],
+        }
+        revision_path = root / "revision.json"
+        revision_path.write_text(
+            json.dumps(revision, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        aligned_path = root / "aligned-run"
+        run_workflow.align_run(
+            prepared.root, revision_path, output_dir=aligned_path
+        )
+        return prepared, run_workflow.load_bundle(aligned_path), sources
+
+    @staticmethod
+    def edit_workbook(aligned: run_workflow.LoadedRunBundle, output: Path) -> None:
+        output.write_bytes(aligned.artifacts["paperWorkbook"].encoded)
+        workbook = load_workbook(output, data_only=False)
+        workbook["Questions"].append(["question-001", "What happened?", 1])
+        workbook["Selections"].append(
+            [
+                "ANSWER",
+                "answer-001",
+                "question-001",
+                1,
+                "A-001.MP4",
+                "cue-000001",
+                "cue-000001",
+                None,
+                None,
+            ]
+        )
+        workbook.save(output)
+
+    @staticmethod
+    def probe(source: sync_scan.MediaSource) -> dict[str, object]:
+        durations = {"A-001.MP4": 10.0, "B-001.MP4": 8.0}
+        return {
+            "duration_seconds": durations[source.media_id],
+            "compatibility": {
+                "videoStreamCount": 1,
+                "audioStreamCount": 1,
+                "width": 3840,
+                "height": 2160,
+                "frameRate": "30000/1001",
+                "colorSpace": "bt709",
+                "colorTransfer": "bt709",
+                "colorPrimaries": "bt709",
+                "sampleRate": "48000",
+                "channels": 2,
+            },
+        }
+
+    def finish(
+        self,
+        root: Path,
+        prepared: run_workflow.LoadedRunBundle,
+        aligned: run_workflow.LoadedRunBundle,
+        sources: list[sync_scan.MediaSource],
+        *,
+        calls: list[str] | None = None,
+    ) -> tuple[dict[str, object], Path]:
+        workbook = root / "edited-paper.xlsx"
+        self.edit_workbook(aligned, workbook)
+        output = root / "finished-run"
+        camera_a = [source for source in sources if source.media_id.startswith("A-")]
+        camera_b = [source for source in sources if source.media_id.startswith("B-")]
+        observed = [] if calls is None else calls
+        real_apply = paper_edit.apply_workbook
+        real_organize = organizer.organize_and_publish
+        real_story = story_fcpxml.emit_story_and_publish
+
+        def apply(*args, **kwargs):
+            observed.append("paper")
+            return real_apply(*args, **kwargs)
+
+        def organize(*args, **kwargs):
+            observed.append("organize")
+            return real_organize(*args, **kwargs)
+
+        def story(*args, **kwargs):
+            observed.append("emit")
+            return real_story(*args, **kwargs)
+
+        with (
+            mock.patch.object(paper_edit, "apply_workbook", side_effect=apply),
+            mock.patch.object(
+                organizer, "organize_and_publish", side_effect=organize
+            ),
+            mock.patch.object(
+                story_fcpxml, "emit_story_and_publish", side_effect=story
+            ),
+            mock.patch.object(sync_scan, "probe_media", side_effect=self.probe),
+        ):
+            summary = run_workflow.finish_run(
+                prepared.root,
+                aligned.root,
+                workbook,
+                camera_a,
+                camera_b,
+                metadata=emit_fcpxml.ProjectMetadata("Interview", "Story cut"),
+                output_dir=output,
+            )
+        return summary, output
+
+    def test_finish_applies_organizes_emits_and_chains_exact_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, aligned, sources = self.prepare_and_align(root)
+            calls: list[str] = []
+
+            summary, output = self.finish(
+                root, prepared, aligned, sources, calls=calls
+            )
+
+            self.assertEqual(calls, ["paper", "organize", "emit"])
+            self.assertEqual(summary["phase"], "finished")
+            finished = run_workflow.load_bundle(output, expected_phase="finished")
+            self.assertEqual(
+                finished.manifest["manifestChain"],
+                [prepared.manifest_sha256, aligned.manifest_sha256],
+            )
+            self.assertEqual(
+                finished.manifest["sources"], prepared.manifest["sources"]
+            )
+            self.assertEqual(
+                set(finished.artifacts), {"grouping", "workingCut", "storyCut"}
+            )
+            self.assertNotIn("What happened?", json.dumps(summary))
+            self.assertNotIn(str(root), json.dumps(summary))
+
+    def test_finish_rejects_chain_source_and_existing_output_before_engines(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, aligned, sources = self.prepare_and_align(root)
+            workbook = root / "edited.xlsx"
+            self.edit_workbook(aligned, workbook)
+            camera_a = [sources[0]]
+            camera_b = [sources[1]]
+            existing = root / "existing"
+            existing.mkdir()
+            with (
+                mock.patch.object(paper_edit, "apply_workbook") as apply,
+                self.assertRaisesRegex(ValueError, "TRITRACK_OUTPUT_EXISTS"),
+            ):
+                run_workflow.finish_run(
+                    prepared.root,
+                    aligned.root,
+                    workbook,
+                    camera_a,
+                    camera_b,
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    output_dir=existing,
+                )
+            apply.assert_not_called()
+
+            sources[0].path.write_bytes(b"changed-source")
+            with (
+                mock.patch.object(paper_edit, "apply_workbook") as apply,
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_RUN_SOURCE_MISMATCH"
+                ),
+            ):
+                run_workflow.finish_run(
+                    prepared.root,
+                    aligned.root,
+                    workbook,
+                    camera_a,
+                    camera_b,
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    output_dir=root / "source-mismatch",
+                )
+            apply.assert_not_called()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, aligned, sources = self.prepare_and_align(root)
+            changed = copy.deepcopy(aligned.manifest)
+            changed["manifestChain"] = ["8" * 64]
+            (aligned.root / "run-manifest.json").write_bytes(
+                run_workflow.encode_manifest(changed)
+            )
+            workbook = root / "edited.xlsx"
+            self.edit_workbook(aligned, workbook)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_CHAIN_MISMATCH"
+            ):
+                run_workflow.finish_run(
+                    prepared.root,
+                    aligned.root,
+                    workbook,
+                    [sources[0]],
+                    [sources[1]],
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    output_dir=root / "bad-chain",
+                )
+
+    def test_status_is_read_only_and_rejects_changed_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, aligned, sources = self.prepare_and_align(root)
+            _, output = self.finish(root, prepared, aligned, sources)
+            before = {
+                path.name: path.read_bytes() for path in output.iterdir()
+            }
+
+            summary = run_workflow.status_run(output)
+
+            self.assertEqual(summary["phase"], "finished")
+            self.assertEqual(summary["nextAction"], "complete")
+            self.assertEqual(
+                before,
+                {path.name: path.read_bytes() for path in output.iterdir()},
+            )
+            self.assertNotIn("What happened?", json.dumps(summary))
+
+            (output / "story-cut.fcpxml").write_text("changed", encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_ARTIFACT_HASH_MISMATCH"
+            ):
+                run_workflow.status_run(output)
 
 
 if __name__ == "__main__":

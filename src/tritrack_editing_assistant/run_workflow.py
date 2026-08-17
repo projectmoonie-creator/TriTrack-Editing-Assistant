@@ -22,8 +22,10 @@ from . import (
     contracts,
     doctor,
     emit_fcpxml,
+    organizer,
     paper_edit,
     process,
+    story_fcpxml,
     sync_scan,
     transcribe_takes,
 )
@@ -782,3 +784,178 @@ def align_run(
         )
 
     return summarize_bundle(publish_bundle(Path(output_dir), build))
+
+
+def _finish_source_hashes(
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    *,
+    expected_sources: object,
+) -> dict[Path, str]:
+    if not camera_a_sources or not camera_b_sources:
+        raise ValueError("TRITRACK_RUN_SOURCE_MISMATCH")
+    declared: list[tuple[str, sync_scan.MediaSource]] = [
+        *(("A", source) for source in camera_a_sources),
+        *(("B", source) for source in camera_b_sources),
+    ]
+    media_ids = [source.media_id for _, source in declared]
+    paths = [source.path for _, source in declared]
+    if (
+        len(media_ids) != len(set(media_ids))
+        or len(paths) != len(set(paths))
+        or any(source.media_id != source.path.name for _, source in declared)
+    ):
+        raise ValueError("TRITRACK_RUN_SOURCE_MISMATCH")
+    try:
+        hashes = {
+            source.path: _hash_regular_path(
+                source.path, code="TRITRACK_RUN_SOURCE_MISMATCH"
+            )
+            for _, source in declared
+        }
+        expected_by_id = {
+            str(source["mediaId"]): source for source in expected_sources
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("TRITRACK_RUN_SOURCE_MISMATCH") from error
+    if set(media_ids) != set(expected_by_id):
+        raise ValueError("TRITRACK_RUN_SOURCE_MISMATCH")
+    for camera, source in declared:
+        expected = expected_by_id[source.media_id]
+        if (
+            expected["camera"] != camera
+            or expected["sha256"] != hashes[source.path]
+        ):
+            raise ValueError("TRITRACK_RUN_SOURCE_MISMATCH")
+    return hashes
+
+
+def _require_path_hashes_unchanged(path_hashes: Mapping[Path, str]) -> None:
+    if any(
+        _hash_regular_path(path, code="TRITRACK_RUN_INPUT_CHANGED") != expected
+        for path, expected in path_hashes.items()
+    ):
+        raise ValueError("TRITRACK_RUN_INPUT_CHANGED")
+
+
+def _validate_finish_chain(
+    prepared: LoadedRunBundle, aligned: LoadedRunBundle
+) -> None:
+    if aligned.manifest["manifestChain"] != [prepared.manifest_sha256]:
+        raise ValueError("TRITRACK_RUN_CHAIN_MISMATCH")
+    for field in ("runId", "profileId", "bindingId", "sources"):
+        if aligned.manifest[field] != prepared.manifest[field]:
+            raise ValueError("TRITRACK_RUN_CHAIN_MISMATCH")
+
+
+def finish_run(
+    prepared_dir: Path,
+    aligned_dir: Path,
+    workbook_path: Path,
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    *,
+    metadata: emit_fcpxml.ProjectMetadata,
+    output_dir: Path,
+) -> dict[str, object]:
+    """Apply paper intent and publish one exact story-cut result bundle."""
+
+    process.require_absent_output(output_dir)
+    prepared = load_bundle(prepared_dir, expected_phase="prepared")
+    aligned = load_bundle(aligned_dir, expected_phase="aligned")
+    _validate_finish_chain(prepared, aligned)
+    source_hashes = _finish_source_hashes(
+        camera_a_sources,
+        camera_b_sources,
+        expected_sources=prepared.manifest["sources"],
+    )
+    selected_workbook = Path(workbook_path)
+    workbook_sha256 = _hash_regular_path(
+        selected_workbook, code="TRITRACK_PAPER_WORKBOOK_INVALID"
+    )
+    source_set_hash = _hash_value(prepared.manifest["sources"])
+
+    def build(staging: Path) -> dict[str, object]:
+        paper_edit.apply_workbook(
+            aligned.artifacts["alignedTranscript"].path,
+            selected_workbook,
+            output_path=staging / "grouping.json",
+        )
+        organizer.organize_and_publish(
+            aligned.artifacts["alignedTranscript"].path,
+            staging / "grouping.json",
+            output_path=staging / "working-cut.json",
+        )
+        story_fcpxml.emit_story_and_publish(
+            camera_a_sources,
+            camera_b_sources,
+            sync_map_path=prepared.artifacts["syncMap"].path,
+            aligned_path=aligned.artifacts["alignedTranscript"].path,
+            grouping_path=staging / "grouping.json",
+            working_cut_path=staging / "working-cut.json",
+            profile_id=str(prepared.manifest["profileId"]),
+            binding_id=str(prepared.manifest["bindingId"]),
+            metadata=metadata,
+            output_path=staging / "story-cut.fcpxml",
+        )
+        _require_bundle_unchanged(prepared)
+        _require_bundle_unchanged(aligned)
+        _require_path_hashes_unchanged(
+            {**source_hashes, selected_workbook: workbook_sha256}
+        )
+        artifacts = _artifact_records(staging, "finished")
+        stages = [
+            {
+                "name": "paper",
+                "inputHashes": {
+                    "alignedTranscript": aligned.artifacts[
+                        "alignedTranscript"
+                    ].sha256,
+                    "workbook": workbook_sha256,
+                },
+                "outputHashes": {"grouping": artifacts["grouping"]["sha256"]},
+            },
+            {
+                "name": "organize",
+                "inputHashes": {
+                    "alignedTranscript": aligned.artifacts[
+                        "alignedTranscript"
+                    ].sha256,
+                    "grouping": artifacts["grouping"]["sha256"],
+                },
+                "outputHashes": {
+                    "workingCut": artifacts["workingCut"]["sha256"]
+                },
+            },
+            {
+                "name": "emit",
+                "inputHashes": {
+                    "alignedTranscript": aligned.artifacts[
+                        "alignedTranscript"
+                    ].sha256,
+                    "grouping": artifacts["grouping"]["sha256"],
+                    "sourceSet": source_set_hash,
+                    "syncMap": prepared.artifacts["syncMap"].sha256,
+                    "workingCut": artifacts["workingCut"]["sha256"],
+                },
+                "outputHashes": {"storyCut": artifacts["storyCut"]["sha256"]},
+            },
+        ]
+        return build_manifest(
+            run_id=str(prepared.manifest["runId"]),
+            profile_id=str(prepared.manifest["profileId"]),
+            binding_id=str(prepared.manifest["bindingId"]),
+            phase="finished",
+            manifest_chain=[prepared.manifest_sha256, aligned.manifest_sha256],
+            sources=prepared.manifest["sources"],
+            stages=stages,
+            artifacts=artifacts,
+        )
+
+    return summarize_bundle(publish_bundle(Path(output_dir), build))
+
+
+def status_run(run_dir: Path) -> dict[str, object]:
+    """Validate and summarize one run bundle without writing anything."""
+
+    return summarize_bundle(load_bundle(Path(run_dir)))
