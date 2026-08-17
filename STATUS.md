@@ -117,6 +117,12 @@ in `docs/TASK-10-VERIFICATION.md`.
 Local verification passed 193 complete-suite and 9 maintainer-boundary tests,
 plus Ruff, compilation, identity, both skill validators, non-editable wheel
 help／status smoke, registry, and diff gates.
+The frozen closeout target `08517f477ae263664f981c002cc974c77fba291a`
+passed Codex's independent review and a completed Gemini review with no
+findings. Gemini requested, observed, and completed `gemini-3.7-flash`. The
+separate Claude subscription review requested the dynamic `opus` capability
+alias, timed out, and remains explicitly incomplete with observed／completed
+models null and no retry, downgrade, or fallback.
 
 ## Next action
 

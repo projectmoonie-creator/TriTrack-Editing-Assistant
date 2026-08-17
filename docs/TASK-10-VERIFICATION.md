@@ -90,5 +90,14 @@ All run-workflow fixtures use invented content.
 Closeout-review provenance is recorded in the Task 10 closeout packet and
 provider status／adjudication files under `docs/reviews/`.
 
+The frozen closeout target was
+`08517f477ae263664f981c002cc974c77fba291a`; packet SHA-256 was
+`3a7b79547fc40a2513a6e912e45053fe061a045d3e43fdfb91a49cc641ad48e5`.
+Codex's independent review and Gemini's completed review found no findings.
+Gemini requested, observed, and completed `gemini-3.7-flash`. The separate
+Claude subscription wrapper requested the dynamic `opus` capability alias but
+timed out; observed and completed models are null, and the attempt remains
+incomplete without retry, downgrade, paid credential, or provider fallback.
+
 No tag, release, pull request, tester contact, package publication, application
 submission, Final Cut GUI evidence, or DTD evidence is claimed by Task 10.
