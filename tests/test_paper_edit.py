@@ -13,7 +13,7 @@ from unittest import mock
 from openpyxl import load_workbook
 
 from tests.task9_fixtures import invented_aligned, invented_grouping
-from tritrack_editing_assistant import organizer, paper_edit
+from tritrack_editing_assistant import organizer, paper_edit, validate_artifacts
 from tritrack_editing_assistant.contracts import validate_contract
 
 
@@ -317,6 +317,59 @@ class PaperApplyTest(unittest.TestCase):
             self.assertNotIn("startMs", encoded)
             self.assertNotIn("sourceSha256", encoded)
             self.assertNotIn("Invented first answer.", encoded)
+
+    def test_validate_workbook_is_read_only_and_shares_apply_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aligned, workbook, aligned_bytes = self.editable_workbook(root)
+            workbook_bytes = workbook.read_bytes()
+            entries_before = {entry.name for entry in root.iterdir()}
+
+            validated = paper_edit.validate_workbook(aligned, workbook)
+            summary = validate_artifacts.validate_paper_artifacts(
+                aligned,
+                workbook,
+            )
+
+            self.assertEqual(validated.aligned_sha256, hashlib.sha256(aligned_bytes).hexdigest())
+            self.assertEqual(validated.workbook_sha256, hashlib.sha256(workbook_bytes).hexdigest())
+            self.assertEqual(validated.workbook_schema_version, "tritrack.paper-workbook/v1")
+            self.assertEqual(
+                (
+                    validated.cue_count,
+                    validated.question_count,
+                    validated.answer_count,
+                    validated.reserve_count,
+                ),
+                (4, 2, 2, 1),
+            )
+            self.assertEqual(
+                summary,
+                {
+                    "schemaVersion": "tritrack.validate-summary/v1",
+                    "toolVersion": "0.1.0a0",
+                    "artifactKind": "paper",
+                    "validationScope": "authority-bound",
+                    "hashes": {
+                        "aligned": hashlib.sha256(aligned_bytes).hexdigest(),
+                        "workbook": hashlib.sha256(workbook_bytes).hexdigest(),
+                    },
+                    "counts": {
+                        "answerCount": 2,
+                        "cueCount": 4,
+                        "questionCount": 2,
+                        "reserveCount": 1,
+                    },
+                    "details": {
+                        "workbookSchemaVersion": "tritrack.paper-workbook/v1"
+                    },
+                },
+            )
+            self.assertEqual(entries_before, {entry.name for entry in root.iterdir()})
+            self.assertEqual(aligned.read_bytes(), aligned_bytes)
+            self.assertEqual(workbook.read_bytes(), workbook_bytes)
+            self.assertNotIn("Invented", json.dumps(summary))
+            self.assertNotIn(str(root), json.dumps(summary))
 
     def test_grouping_fixpoint_and_logical_grid_idempotence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

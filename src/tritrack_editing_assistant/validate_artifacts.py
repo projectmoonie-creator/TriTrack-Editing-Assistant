@@ -12,7 +12,7 @@ from pathlib import Path
 
 from jsonschema import ValidationError
 
-from . import __version__, contracts, doctor, emit_fcpxml
+from . import __version__, contracts, doctor, emit_fcpxml, paper_edit
 
 MAX_VALIDATION_ARTIFACT_BYTES = 16 * 1024 * 1024
 
@@ -150,4 +150,30 @@ def validate_fcpxml_artifact(
         hashes={"artifact": artifact.sha256},
         counts={},
         details={"profileId": profile_id, "bindingId": binding_id},
+    )
+
+
+def validate_paper_artifacts(
+    aligned_path: Path,
+    workbook_path: Path,
+) -> dict[str, object]:
+    """Validate one workbook against the exact aligned JSON authority."""
+
+    validated = paper_edit.validate_workbook(aligned_path, workbook_path)
+    return _validation_summary(
+        kind="paper",
+        scope="authority-bound",
+        hashes={
+            "aligned": validated.aligned_sha256,
+            "workbook": validated.workbook_sha256,
+        },
+        counts={
+            "answerCount": validated.answer_count,
+            "cueCount": validated.cue_count,
+            "questionCount": validated.question_count,
+            "reserveCount": validated.reserve_count,
+        },
+        details={
+            "workbookSchemaVersion": validated.workbook_schema_version,
+        },
     )

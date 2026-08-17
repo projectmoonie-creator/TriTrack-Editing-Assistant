@@ -64,6 +64,18 @@ class LoadedArtifact:
     limit: int
 
 
+@dataclass(frozen=True)
+class ValidatedWorkbook:
+    aligned_sha256: str
+    workbook_sha256: str
+    workbook_schema_version: str
+    cue_count: int
+    question_count: int
+    answer_count: int
+    reserve_count: int
+    grouping: dict[str, object]
+
+
 def _read_regular_bytes(path: Path, *, limit: int, invalid_code: str) -> bytes:
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
@@ -697,17 +709,12 @@ def _grouping_from_workbook(
     )
 
 
-def apply_workbook(
+def validate_workbook(
     aligned_path: Path,
     workbook_path: Path,
-    *,
-    output_path: Path,
-) -> dict[str, object]:
-    """Apply strict workbook intent and publish canonical grouping JSON."""
+) -> ValidatedWorkbook:
+    """Validate and re-derive one workbook without publishing output."""
 
-    destination = require_absent_output(output_path)
-    if not destination.parent.is_dir():
-        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
     aligned = _load_json(
         aligned_path,
         contract="aligned-transcript-v1",
@@ -731,5 +738,39 @@ def apply_workbook(
     )
     _verify_unchanged(aligned)
     _verify_unchanged(workbook_artifact)
-    _publish_bytes(organizer.encode_grouping(grouping), destination)
-    return grouping
+    questions = grouping["questions"]
+    reserve = grouping["reserve"]
+    assert isinstance(questions, list)
+    assert isinstance(reserve, list)
+    answer_count = 0
+    for question in questions:
+        assert isinstance(question, Mapping)
+        answers = question["answers"]
+        assert isinstance(answers, list)
+        answer_count += len(answers)
+    return ValidatedWorkbook(
+        aligned_sha256=aligned.sha256,
+        workbook_sha256=workbook_artifact.sha256,
+        workbook_schema_version=WORKBOOK_SCHEMA_VERSION,
+        cue_count=len(cue_rows),
+        question_count=len(questions),
+        answer_count=answer_count,
+        reserve_count=len(reserve),
+        grouping=grouping,
+    )
+
+
+def apply_workbook(
+    aligned_path: Path,
+    workbook_path: Path,
+    *,
+    output_path: Path,
+) -> dict[str, object]:
+    """Apply strict workbook intent and publish canonical grouping JSON."""
+
+    destination = require_absent_output(output_path)
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    validated = validate_workbook(aligned_path, workbook_path)
+    _publish_bytes(organizer.encode_grouping(validated.grouping), destination)
+    return validated.grouping
