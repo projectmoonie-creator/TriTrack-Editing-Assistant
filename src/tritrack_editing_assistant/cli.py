@@ -15,6 +15,7 @@ from . import emit_fcpxml as emit_module
 from . import gemini_hybrid as hybrid_module
 from . import organizer as organizer_module
 from . import paper_edit as paper_module
+from . import run_workflow as run_module
 from . import sync_scan as sync_module
 from . import transcribe_takes as transcribe_module
 
@@ -79,7 +80,11 @@ COMPONENTS = (
         "command": "hybrid",
         "status": "planned",
     },
-    {"sourceComponent": "multicam-sync", "command": "run", "status": "planned"},
+    {
+        "sourceComponent": "multicam-sync",
+        "command": "run",
+        "status": "implemented",
+    },
 )
 
 
@@ -455,6 +460,140 @@ def _run_paper_apply(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _run_error_exit(code: str) -> int:
+    if code == "TRITRACK_OUTPUT_EXISTS":
+        return EXIT_OUTPUT_EXISTS
+    if code in {
+        "TRITRACK_OUTPUT_PARENT_MISSING",
+        "TRITRACK_RUN_INPUT_UNREADABLE",
+        "TRITRACK_STORY_SOURCE_UNREADABLE",
+        "TRITRACK_ORGANIZER_INPUT_UNREADABLE",
+        "TRITRACK_PAPER_INPUT_UNREADABLE",
+    }:
+        return EXIT_IO
+    if code in {
+        "TRITRACK_SYNC_PROBE_FAILED",
+        "TRITRACK_SYNC_AUDIO_DECODE_FAILED",
+        "TRITRACK_TRANSCRIBE_AUDIO_DECODE_FAILED",
+        "TRITRACK_TRANSCRIBE_ENGINE_FAILED",
+        "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE",
+    }:
+        return EXIT_DEPENDENCY
+    if code in {
+        "TRITRACK_RUN_ENVIRONMENT_UNSUPPORTED",
+        "TRITRACK_PROFILE_UNKNOWN",
+    }:
+        return EXIT_POLICY
+    if code in {
+        "TRITRACK_RUN_SOURCE_REQUIRED",
+        "TRITRACK_RUN_TRANSCRIBE_SOURCE_INVALID",
+        "TRITRACK_TRANSCRIPT_LANGUAGE_INVALID",
+        "TRITRACK_EMIT_METADATA_INVALID",
+    }:
+        return EXIT_USAGE
+    return EXIT_DATA
+
+
+def _print_run_summary(summary: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+    print(f"RUN\t{summary['runId']}")
+    print(f"PHASE\t{summary['phase']}")
+    print(f"NEXT\t{summary['nextAction']}")
+    print(f"STAGES\t{','.join(summary['stages'])}")
+    artifacts = summary["artifacts"]
+    assert isinstance(artifacts, dict)
+    for logical_name, sha256 in artifacts.items():
+        print(f"ARTIFACT\t{logical_name}\t{sha256}")
+
+
+def _run_prepare(arguments: argparse.Namespace) -> int:
+    camera_a = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_a
+    ]
+    camera_b = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_b
+    ]
+    try:
+        summary = run_module.prepare_run(
+            camera_a,
+            camera_b,
+            arguments.transcribe_media,
+            model_path=arguments.model,
+            language=arguments.language,
+            profile_id=arguments.profile,
+            binding_id=arguments.binding,
+            metadata=emit_module.ProjectMetadata(
+                arguments.event_name, arguments.project_name
+            ),
+            run_id=arguments.run_id,
+            output_dir=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _run_error_exit(code)
+    if arguments.json:
+        _print_run_summary(summary, as_json=True)
+    return EXIT_OK
+
+
+def _run_align_bundle(arguments: argparse.Namespace) -> int:
+    try:
+        summary = run_module.align_run(
+            arguments.prepared,
+            arguments.revision,
+            output_dir=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _run_error_exit(code)
+    if arguments.json:
+        _print_run_summary(summary, as_json=True)
+    return EXIT_OK
+
+
+def _run_finish(arguments: argparse.Namespace) -> int:
+    camera_a = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_a
+    ]
+    camera_b = [
+        sync_module.MediaSource(path.name, path) for path in arguments.camera_b
+    ]
+    try:
+        summary = run_module.finish_run(
+            arguments.prepared,
+            arguments.aligned,
+            arguments.workbook,
+            camera_a,
+            camera_b,
+            metadata=emit_module.ProjectMetadata(
+                arguments.event_name, arguments.project_name
+            ),
+            output_dir=arguments.output,
+        )
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _run_error_exit(code)
+    if arguments.json:
+        _print_run_summary(summary, as_json=True)
+    return EXIT_OK
+
+
+def _run_status(arguments: argparse.Namespace) -> int:
+    try:
+        summary = run_module.status_run(arguments.run_dir)
+    except (TypeError, ValueError) as error:
+        code = str(error).split(":", 1)[0]
+        print(json.dumps({"error": code}, ensure_ascii=False))
+        return _run_error_exit(code)
+    _print_run_summary(summary, as_json=arguments.json)
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tritrack",
@@ -753,9 +892,71 @@ def build_parser() -> argparse.ArgumentParser:
     )
     paper_apply.set_defaults(handler=_run_paper_apply)
 
+    run = subparsers.add_parser(
+        "run",
+        help="publish immutable local workflow stage bundles",
+    )
+    run_subparsers = run.add_subparsers(dest="run_command", required=True)
+
+    run_prepare = run_subparsers.add_parser(
+        "prepare", help="doctor, synchronize, transcribe, and emit a string-out"
+    )
+    run_prepare.add_argument(
+        "--camera-a", action="append", required=True, type=Path
+    )
+    run_prepare.add_argument(
+        "--camera-b", action="append", required=True, type=Path
+    )
+    run_prepare.add_argument(
+        "--transcribe-media", action="append", required=True, type=Path
+    )
+    run_prepare.add_argument("--model", required=True, type=Path)
+    run_prepare.add_argument("--language", required=True)
+    run_prepare.add_argument("--profile", required=True)
+    run_prepare.add_argument("--binding", required=True)
+    run_prepare.add_argument("--event-name", required=True)
+    run_prepare.add_argument("--project-name", required=True)
+    run_prepare.add_argument("--run-id", required=True)
+    run_prepare.add_argument("--output", required=True, type=Path)
+    run_prepare.add_argument("--json", action="store_true")
+    run_prepare.set_defaults(handler=_run_prepare)
+
+    run_align = run_subparsers.add_parser(
+        "align", help="apply one explicit text revision and export paper edit"
+    )
+    run_align.add_argument("--prepared", required=True, type=Path)
+    run_align.add_argument("--revision", required=True, type=Path)
+    run_align.add_argument("--output", required=True, type=Path)
+    run_align.add_argument("--json", action="store_true")
+    run_align.set_defaults(handler=_run_align_bundle)
+
+    run_finish = run_subparsers.add_parser(
+        "finish", help="apply paper intent and emit the story cut"
+    )
+    run_finish.add_argument("--prepared", required=True, type=Path)
+    run_finish.add_argument("--aligned", required=True, type=Path)
+    run_finish.add_argument("--workbook", required=True, type=Path)
+    run_finish.add_argument(
+        "--camera-a", action="append", required=True, type=Path
+    )
+    run_finish.add_argument(
+        "--camera-b", action="append", required=True, type=Path
+    )
+    run_finish.add_argument("--event-name", required=True)
+    run_finish.add_argument("--project-name", required=True)
+    run_finish.add_argument("--output", required=True, type=Path)
+    run_finish.add_argument("--json", action="store_true")
+    run_finish.set_defaults(handler=_run_finish)
+
+    run_status = run_subparsers.add_parser(
+        "status", help="validate and summarize one complete run bundle"
+    )
+    run_status.add_argument("--run", dest="run_dir", required=True, type=Path)
+    run_status.add_argument("--json", action="store_true")
+    run_status.set_defaults(handler=_run_status)
+
     planned_commands = {
         "validate": "validate generated output",
-        "run": "orchestrate the complete local workflow",
     }
     for name, help_text in planned_commands.items():
         command_parser = subparsers.add_parser(name, help=help_text)

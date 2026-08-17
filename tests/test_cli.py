@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -7,6 +9,9 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from tritrack_editing_assistant import cli, run_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,7 +168,7 @@ class CliSmokeTest(unittest.TestCase):
                 "align_text.py": "implemented",
                 "gemini_hybrid.py": "implemented",
                 "gemini_transcribe.mjs": "planned",
-                "multicam-sync": "planned",
+                "multicam-sync": "implemented",
             },
         )
 
@@ -216,6 +221,154 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn(option, completed.stdout)
         for excluded in ("provider", "upload", "prompt", "model", "retime"):
             self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_run_help_exposes_exact_immutable_local_transitions(self):
+        run = self.run_cli("run", "--help")
+        for command in ("prepare", "align", "finish", "status"):
+            self.assertIn(command, run.stdout)
+
+        prepare = self.run_cli("run", "prepare", "--help")
+        for option in (
+            "--camera-a",
+            "--camera-b",
+            "--transcribe-media",
+            "--model",
+            "--language",
+            "--profile",
+            "--binding",
+            "--event-name",
+            "--project-name",
+            "--run-id",
+            "--output",
+            "--json",
+        ):
+            self.assertIn(option, prepare.stdout)
+
+        align = self.run_cli("run", "align", "--help")
+        for option in ("--prepared", "--revision", "--output", "--json"):
+            self.assertIn(option, align.stdout)
+
+        finish = self.run_cli("run", "finish", "--help")
+        for option in (
+            "--prepared",
+            "--aligned",
+            "--workbook",
+            "--camera-a",
+            "--camera-b",
+            "--event-name",
+            "--project-name",
+            "--output",
+            "--json",
+        ):
+            self.assertIn(option, finish.stdout)
+
+        status = self.run_cli("run", "status", "--help")
+        for option in ("--run", "--json"):
+            self.assertIn(option, status.stdout)
+        for completed in (run, prepare, align, finish, status):
+            for excluded in (
+                "provider",
+                "upload",
+                "credential",
+                "overwrite",
+                "resume",
+                "release",
+            ):
+                self.assertNotIn(excluded, completed.stdout.lower())
+
+    def test_run_handlers_forward_only_public_inputs_and_print_summary(self):
+        summary = {
+            "schemaVersion": "tritrack.run-summary/v1",
+            "runId": "run-001",
+            "phase": "prepared",
+            "nextAction": "provide-revision",
+            "stages": ["doctor", "sync", "transcribe", "emit"],
+            "artifacts": {"syncMap": "a" * 64},
+        }
+        standard_output = io.StringIO()
+        with (
+            mock.patch.object(
+                run_workflow, "prepare_run", return_value=summary
+            ) as prepare,
+            contextlib.redirect_stdout(standard_output),
+        ):
+            returncode = cli.main(
+                [
+                    "run",
+                    "prepare",
+                    "--camera-a",
+                    "A-001.MP4",
+                    "--camera-b",
+                    "B-001.MP4",
+                    "--transcribe-media",
+                    "A-001.MP4",
+                    "--model",
+                    "model.bin",
+                    "--language",
+                    "en",
+                    "--profile",
+                    "uhd-2997-ndf-fcpxml-1.14",
+                    "--binding",
+                    "basic-title-v1",
+                    "--event-name",
+                    "Interview",
+                    "--project-name",
+                    "String-out",
+                    "--run-id",
+                    "run-001",
+                    "--output",
+                    "prepared-run",
+                    "--json",
+                ]
+            )
+        self.assertEqual(returncode, 0)
+        self.assertEqual(json.loads(standard_output.getvalue()), summary)
+        positional = prepare.call_args.args
+        self.assertEqual(positional[0][0].media_id, "A-001.MP4")
+        self.assertEqual(positional[1][0].media_id, "B-001.MP4")
+        self.assertEqual(positional[2], [Path("A-001.MP4")])
+        self.assertEqual(prepare.call_args.kwargs["run_id"], "run-001")
+
+    def test_run_status_and_failure_codes_are_sanitized(self):
+        summary = {
+            "schemaVersion": "tritrack.run-summary/v1",
+            "runId": "run-001",
+            "phase": "finished",
+            "nextAction": "complete",
+            "stages": ["paper", "organize", "emit"],
+            "artifacts": {"storyCut": "a" * 64},
+        }
+        standard_output = io.StringIO()
+        with (
+            mock.patch.object(run_workflow, "status_run", return_value=summary),
+            contextlib.redirect_stdout(standard_output),
+        ):
+            returncode = cli.main(["run", "status", "--run", "finished", "--json"])
+        self.assertEqual(returncode, 0)
+        self.assertEqual(json.loads(standard_output.getvalue()), summary)
+
+        cases = {
+            "TRITRACK_OUTPUT_EXISTS": 73,
+            "TRITRACK_OUTPUT_PARENT_MISSING": 74,
+            "TRITRACK_RUN_ENVIRONMENT_UNSUPPORTED": 78,
+            "TRITRACK_TRANSCRIBE_ENGINE_FAILED": 69,
+            "TRITRACK_RUN_BUNDLE_INCOMPLETE": 65,
+        }
+        for code, expected in cases.items():
+            standard_output = io.StringIO()
+            with (
+                self.subTest(code=code),
+                mock.patch.object(
+                    run_workflow, "status_run", side_effect=ValueError(code)
+                ),
+                contextlib.redirect_stdout(standard_output),
+            ):
+                returncode = cli.main(
+                    ["run", "status", "--run", "invented", "--json"]
+                )
+            self.assertEqual(returncode, expected)
+            self.assertEqual(json.loads(standard_output.getvalue()), {"error": code})
+            self.assertNotIn("Traceback", standard_output.getvalue())
 
     def test_align_cli_publishes_and_prints_only_sanitized_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
