@@ -509,6 +509,17 @@ def _probe_sources(
     return media
 
 
+def probe_sources(
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    *,
+    profile: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Probe public media inputs against one exact compatibility profile."""
+
+    return _probe_sources(camera_a_sources, camera_b_sources, profile=profile)
+
+
 def emit_and_publish(
     camera_a_sources: Sequence[sync_scan.MediaSource],
     camera_b_sources: Sequence[sync_scan.MediaSource],
@@ -527,7 +538,7 @@ def emit_and_publish(
     binding = doctor.load_title_binding(binding_id)
     if sync_map["profileId"] != profile_id:
         raise ValueError("TRITRACK_PROFILE_MISMATCH")
-    media = _probe_sources(
+    media = probe_sources(
         camera_a_sources,
         camera_b_sources,
         profile=profile,
