@@ -7,7 +7,15 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tritrack_editing_assistant import run_workflow
+from tritrack_editing_assistant import (
+    align_text,
+    doctor,
+    emit_fcpxml,
+    paper_edit,
+    run_workflow,
+    sync_scan,
+    transcribe_takes,
+)
 
 
 def sha256(encoded: bytes) -> str:
@@ -417,6 +425,388 @@ class BundlePublicationTest(unittest.TestCase):
                     output, self.builder(aligned_bundle_files())
                 )
             self.assertEqual((output / "winner").read_text(encoding="utf-8"), "keep")
+
+
+class PrepareAlignTransitionTest(unittest.TestCase):
+    def write_sources(
+        self, root: Path
+    ) -> tuple[list[sync_scan.MediaSource], list[sync_scan.MediaSource], Path]:
+        source_a = root / "A-001.MP4"
+        source_b = root / "B-001.MP4"
+        model = root / "ggml-model.bin"
+        source_a.write_bytes(b"invented-source-a")
+        source_b.write_bytes(b"invented-source-b")
+        model.write_bytes(b"invented-model")
+        return (
+            [sync_scan.MediaSource(source_a.name, source_a)],
+            [sync_scan.MediaSource(source_b.name, source_b)],
+            model,
+        )
+
+    @staticmethod
+    def sync_payload() -> dict[str, object]:
+        return {
+            "schemaVersion": "tritrack.sync-map/v1",
+            "profileId": "uhd-2997-ndf-fcpxml-1.14",
+            "pairs": [
+                {
+                    "pairId": "pair-001",
+                    "mediaA": "A-001.MP4",
+                    "mediaB": "B-001.MP4",
+                    "offsetBFromASeconds": 1.0,
+                    "confidence": 20.0,
+                    "overlapSeconds": 8.0,
+                    "audioMaster": "A",
+                    "durationASeconds": 10.0,
+                    "durationBSeconds": 8.0,
+                    "startedAt": None,
+                }
+            ],
+            "singleA": [],
+            "singleB": [],
+            "warnings": [],
+        }
+
+    def fakes(self, calls: list[str], *, supported: bool = True):
+        def fake_doctor(output: Path, **_arguments):
+            calls.append("doctor")
+            receipt = {
+                "schemaVersion": "tritrack.doctor-receipt/v1",
+                "profileId": "uhd-2997-ndf-fcpxml-1.14",
+                "titleBindingId": "basic-title-v1",
+                "supported": supported,
+                "checks": [],
+                "remediation": [] if supported else ["Invented remediation"],
+            }
+            output.write_text(
+                json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            return receipt
+
+        def fake_sync(_camera_a, _camera_b, *, output_path, **_arguments):
+            calls.append("sync")
+            payload = self.sync_payload()
+            output_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            return payload
+
+        def fake_transcribe(media_paths, *, model_path, language, output_path, **_):
+            calls.append("transcribe")
+            source = Path(media_paths[0])
+            bundle = {
+                "schemaVersion": "tritrack.transcript-bundle/v1",
+                "profileId": "whisper-cpp-cpu-no-fallback-v1",
+                "language": language,
+                "modelSha256": sha256(Path(model_path).read_bytes()),
+                "engine": {
+                    "name": "whisper-cli",
+                    "version": "whisper.cpp version: invented",
+                },
+                "takes": [
+                    {
+                        "takeId": source.name,
+                        "sourceSha256": sha256(source.read_bytes()),
+                        "status": "completed",
+                        "cues": [
+                            {
+                                "cueId": "cue-000001",
+                                "startMs": 0,
+                                "endMs": 500,
+                                "text": "Invented words.",
+                            }
+                        ],
+                    }
+                ],
+            }
+            output_path.write_text(
+                transcribe_takes.encode_transcript_bundle(bundle), encoding="utf-8"
+            )
+            return bundle
+
+        def fake_emit(
+            camera_a,
+            camera_b,
+            *,
+            sync_map_path,
+            profile_id,
+            binding_id,
+            metadata,
+            output_path,
+        ):
+            calls.append("emit")
+            sources = [
+                {
+                    "camera": "A",
+                    "media_id": camera_a[0].media_id,
+                    "path": camera_a[0].path,
+                    "duration_seconds": 10.0,
+                },
+                {
+                    "camera": "B",
+                    "media_id": camera_b[0].media_id,
+                    "path": camera_b[0].path,
+                    "duration_seconds": 8.0,
+                },
+            ]
+            rendered = emit_fcpxml.render_fcpxml(
+                json.loads(Path(sync_map_path).read_text(encoding="utf-8")),
+                sources,
+                profile_id=profile_id,
+                binding_id=binding_id,
+                metadata=metadata,
+            )
+            output_path.write_text(rendered, encoding="utf-8")
+            return rendered
+
+        return fake_doctor, fake_sync, fake_transcribe, fake_emit
+
+    def prepare(
+        self, root: Path, *, calls: list[str] | None = None
+    ) -> tuple[run_workflow.LoadedRunBundle, list[sync_scan.MediaSource], Path]:
+        camera_a, camera_b, model = self.write_sources(root)
+        observed_calls = [] if calls is None else calls
+        fake_doctor, fake_sync, fake_transcribe, fake_emit = self.fakes(
+            observed_calls
+        )
+        output = root / "prepared-run"
+        with (
+            mock.patch.object(doctor, "write_receipt", side_effect=fake_doctor),
+            mock.patch.object(
+                sync_scan, "synchronize_and_publish", side_effect=fake_sync
+            ),
+            mock.patch.object(
+                transcribe_takes,
+                "transcribe_and_publish",
+                side_effect=fake_transcribe,
+            ),
+            mock.patch.object(
+                emit_fcpxml, "emit_and_publish", side_effect=fake_emit
+            ),
+        ):
+            summary = run_workflow.prepare_run(
+                camera_a,
+                camera_b,
+                [camera_a[0].path],
+                model_path=model,
+                language="en",
+                profile_id="uhd-2997-ndf-fcpxml-1.14",
+                binding_id="basic-title-v1",
+                metadata=emit_fcpxml.ProjectMetadata("Interview", "String-out"),
+                run_id="run-001",
+                output_dir=output,
+            )
+        self.assertEqual(summary["phase"], "prepared")
+        return run_workflow.load_bundle(output), [*camera_a, *camera_b], model
+
+    def test_prepare_calls_existing_engines_in_order_and_binds_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calls: list[str] = []
+            bundle, sources, model = self.prepare(root, calls=calls)
+
+            self.assertEqual(calls, ["doctor", "sync", "transcribe", "emit"])
+            self.assertEqual(bundle.manifest["phase"], "prepared")
+            self.assertEqual(
+                [source["mediaId"] for source in bundle.manifest["sources"]],
+                ["A-001.MP4", "B-001.MP4"],
+            )
+            self.assertEqual(
+                [source["transcribed"] for source in bundle.manifest["sources"]],
+                [True, False],
+            )
+            for source in sources:
+                manifest_source = next(
+                    item
+                    for item in bundle.manifest["sources"]
+                    if item["mediaId"] == source.media_id
+                )
+                self.assertEqual(
+                    manifest_source["sha256"], sha256(source.path.read_bytes())
+                )
+            encoded = bundle.manifest_bytes
+            self.assertNotIn(str(root).encode(), encoded)
+            self.assertNotIn(model.name.encode(), encoded)
+            self.assertNotIn(b"Invented words", encoded)
+
+    def test_prepare_rejects_unsupported_subset_duplicate_and_late_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, model = self.write_sources(root)
+            calls: list[str] = []
+            fakes = self.fakes(calls, supported=False)
+            with (
+                mock.patch.object(doctor, "write_receipt", side_effect=fakes[0]),
+                mock.patch.object(
+                    sync_scan, "synchronize_and_publish", side_effect=fakes[1]
+                ) as sync,
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_RUN_ENVIRONMENT_UNSUPPORTED"
+                ),
+            ):
+                run_workflow.prepare_run(
+                    camera_a,
+                    camera_b,
+                    [camera_a[0].path],
+                    model_path=model,
+                    language="en",
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    run_id="run-unsupported",
+                    output_dir=root / "unsupported",
+                )
+            sync.assert_not_called()
+            self.assertFalse((root / "unsupported").exists())
+
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_TRANSCRIBE_SOURCE_INVALID"
+            ):
+                run_workflow.prepare_run(
+                    camera_a,
+                    camera_b,
+                    [root / "foreign.MP4"],
+                    model_path=model,
+                    language="en",
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    run_id="run-foreign",
+                    output_dir=root / "foreign",
+                )
+
+            duplicate_path = root / "other" / "A-001.MP4"
+            duplicate_path.parent.mkdir()
+            duplicate_path.write_bytes(b"duplicate")
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_SOURCE_ID_DUPLICATE"
+            ):
+                run_workflow.prepare_run(
+                    camera_a,
+                    [sync_scan.MediaSource("A-001.MP4", duplicate_path)],
+                    [camera_a[0].path],
+                    model_path=model,
+                    language="en",
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    run_id="run-duplicate",
+                    output_dir=root / "duplicate",
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, model = self.write_sources(root)
+            calls: list[str] = []
+            fakes = list(self.fakes(calls))
+            original_emit = fakes[3]
+
+            def changing_emit(*args, **kwargs):
+                rendered = original_emit(*args, **kwargs)
+                model.write_bytes(b"changed-model")
+                return rendered
+
+            with (
+                mock.patch.object(doctor, "write_receipt", side_effect=fakes[0]),
+                mock.patch.object(
+                    sync_scan, "synchronize_and_publish", side_effect=fakes[1]
+                ),
+                mock.patch.object(
+                    transcribe_takes,
+                    "transcribe_and_publish",
+                    side_effect=fakes[2],
+                ),
+                mock.patch.object(
+                    emit_fcpxml, "emit_and_publish", side_effect=changing_emit
+                ),
+                self.assertRaisesRegex(ValueError, "TRITRACK_RUN_INPUT_CHANGED"),
+            ):
+                run_workflow.prepare_run(
+                    camera_a,
+                    camera_b,
+                    [camera_a[0].path],
+                    model_path=model,
+                    language="en",
+                    profile_id="uhd-2997-ndf-fcpxml-1.14",
+                    binding_id="basic-title-v1",
+                    metadata=emit_fcpxml.ProjectMetadata("Event", "Project"),
+                    run_id="run-changed",
+                    output_dir=root / "changed",
+                )
+            self.assertFalse((root / "changed").exists())
+
+    def test_align_accepts_no_change_revision_and_chains_prepared(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, _, _ = self.prepare(root)
+            transcript = prepared.artifacts["transcriptBundle"]
+            revision = {
+                "schemaVersion": "tritrack.text-revision/v1",
+                "sourceBundleSha256": transcript.sha256,
+                "language": "en",
+                "takes": [],
+            }
+            revision_path = root / "revision.json"
+            revision_bytes = (
+                json.dumps(revision, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n"
+            ).encode("utf-8")
+            revision_path.write_bytes(revision_bytes)
+            output = root / "aligned-run"
+
+            with (
+                mock.patch.object(
+                    align_text,
+                    "align_and_publish",
+                    wraps=align_text.align_and_publish,
+                ) as align,
+                mock.patch.object(
+                    paper_edit,
+                    "export_workbook",
+                    wraps=paper_edit.export_workbook,
+                ) as paper,
+            ):
+                summary = run_workflow.align_run(
+                    prepared.root, revision_path, output_dir=output
+                )
+
+            self.assertEqual([align.call_count, paper.call_count], [1, 1])
+            self.assertEqual(summary["phase"], "aligned")
+            aligned_bundle = run_workflow.load_bundle(output)
+            self.assertEqual(
+                aligned_bundle.manifest["manifestChain"],
+                [prepared.manifest_sha256],
+            )
+            self.assertEqual(
+                aligned_bundle.manifest["sources"], prepared.manifest["sources"]
+            )
+            aligned_payload = json.loads(
+                aligned_bundle.artifacts["alignedTranscript"].encoded
+            )
+            self.assertTrue(
+                all(
+                    cue["disposition"] == "original"
+                    for take in aligned_payload["takes"]
+                    for cue in take["cues"]
+                )
+            )
+            self.assertEqual(revision_path.read_bytes(), revision_bytes)
+
+    def test_align_validates_prepared_bundle_before_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            incomplete = root / "incomplete"
+            incomplete.mkdir()
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_BUNDLE_INCOMPLETE"
+            ):
+                run_workflow.align_run(
+                    incomplete,
+                    root / "missing-revision.json",
+                    output_dir=root / "aligned",
+                )
 
 
 if __name__ == "__main__":

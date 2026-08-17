@@ -16,7 +16,17 @@ from pathlib import Path
 
 from jsonschema import ValidationError
 
-from . import __version__, contracts, doctor, emit_fcpxml, process
+from . import (
+    __version__,
+    align_text,
+    contracts,
+    doctor,
+    emit_fcpxml,
+    paper_edit,
+    process,
+    sync_scan,
+    transcribe_takes,
+)
 
 MANIFEST_FILE_NAME = "run-manifest.json"
 _MANIFEST_LIMIT_BYTES = 16 * 1024 * 1024
@@ -470,3 +480,305 @@ def publish_bundle(
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def _hash_regular_path(path: Path, *, code: str) -> str:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError(code) from error
+    digest = hashlib.sha256()
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
+            raise ValueError(code)
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            while chunk := stream.read(_HASH_CHUNK_BYTES):
+                digest.update(chunk)
+    except OSError as error:
+        raise ValueError(code) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return digest.hexdigest()
+
+
+def _hash_value(payload: object) -> str:
+    encoded = json.dumps(
+        payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _artifact_records(
+    staging: Path, phase: str
+) -> dict[str, dict[str, str]]:
+    return {
+        logical_name: {
+            "fileName": file_name,
+            "sha256": _hash_regular_path(
+                staging / file_name, code="TRITRACK_RUN_ARTIFACT_INVALID"
+            ),
+        }
+        for logical_name, file_name in PHASE_SPECS[phase].artifacts
+    }
+
+
+def _source_inventory(
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    transcribe_media: Sequence[Path],
+) -> tuple[list[dict[str, object]], dict[Path, str]]:
+    if not camera_a_sources or not camera_b_sources:
+        raise ValueError("TRITRACK_RUN_SOURCE_REQUIRED")
+    declared: list[tuple[str, sync_scan.MediaSource]] = [
+        *(("A", source) for source in camera_a_sources),
+        *(("B", source) for source in camera_b_sources),
+    ]
+    media_ids = [source.media_id for _, source in declared]
+    if (
+        len(media_ids) != len(set(media_ids))
+        or any(source.media_id != source.path.name for _, source in declared)
+    ):
+        raise ValueError("TRITRACK_RUN_SOURCE_ID_DUPLICATE")
+    declared_paths = [source.path for _, source in declared]
+    if len(declared_paths) != len(set(declared_paths)):
+        raise ValueError("TRITRACK_RUN_SOURCE_ID_DUPLICATE")
+    selected_transcribe = [Path(path) for path in transcribe_media]
+    if (
+        not selected_transcribe
+        or len(selected_transcribe) != len(set(selected_transcribe))
+        or any(path not in declared_paths for path in selected_transcribe)
+    ):
+        raise ValueError("TRITRACK_RUN_TRANSCRIBE_SOURCE_INVALID")
+    source_hashes = {
+        source.path: _hash_regular_path(
+            source.path, code="TRITRACK_RUN_INPUT_UNREADABLE"
+        )
+        for _, source in declared
+    }
+    selected_set = set(selected_transcribe)
+    inventory = [
+        {
+            "camera": camera,
+            "mediaId": source.media_id,
+            "sha256": source_hashes[source.path],
+            "transcribed": source.path in selected_set,
+        }
+        for camera, source in declared
+    ]
+    return inventory, source_hashes
+
+
+def _require_inputs_unchanged(
+    source_hashes: Mapping[Path, str], *, model_path: Path, model_sha256: str
+) -> None:
+    if _hash_regular_path(
+        model_path, code="TRITRACK_RUN_INPUT_CHANGED"
+    ) != model_sha256 or any(
+        _hash_regular_path(path, code="TRITRACK_RUN_INPUT_CHANGED") != expected
+        for path, expected in source_hashes.items()
+    ):
+        raise ValueError("TRITRACK_RUN_INPUT_CHANGED")
+
+
+def prepare_run(
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    transcribe_media: Sequence[Path],
+    *,
+    model_path: Path,
+    language: str,
+    profile_id: str,
+    binding_id: str,
+    metadata: emit_fcpxml.ProjectMetadata,
+    run_id: str,
+    output_dir: Path,
+) -> dict[str, object]:
+    """Publish a doctor／sync／transcript／string-out prepared run bundle."""
+
+    process.require_absent_output(output_dir)
+    inventory, source_hashes = _source_inventory(
+        camera_a_sources, camera_b_sources, transcribe_media
+    )
+    selected_model = Path(model_path)
+    model_sha256 = _hash_regular_path(
+        selected_model, code="TRITRACK_RUN_INPUT_UNREADABLE"
+    )
+    selected_transcribe = [Path(path) for path in transcribe_media]
+    profile_hash = _hash_value(doctor.load_profile(profile_id))
+    binding_hash = _hash_value(doctor.load_title_binding(binding_id))
+    source_set_hash = _hash_value(inventory)
+    transcribed_hash = _hash_value(
+        [
+            source
+            for source in sorted(inventory, key=lambda item: item["mediaId"])
+            if source["transcribed"]
+        ]
+    )
+
+    def build(staging: Path) -> dict[str, object]:
+        receipt = doctor.write_receipt(
+            staging / "doctor.json",
+            profile_id=profile_id,
+            transcription_requested=True,
+            whisper_model=selected_model,
+        )
+        if receipt.get("supported") is not True:
+            raise ValueError("TRITRACK_RUN_ENVIRONMENT_UNSUPPORTED")
+        sync_scan.synchronize_and_publish(
+            camera_a_sources,
+            camera_b_sources,
+            profile_id=profile_id,
+            output_path=staging / "sync-map.json",
+        )
+        transcribe_takes.transcribe_and_publish(
+            selected_transcribe,
+            model_path=selected_model,
+            language=language,
+            output_path=staging / "transcript-bundle.json",
+        )
+        emit_fcpxml.emit_and_publish(
+            camera_a_sources,
+            camera_b_sources,
+            sync_map_path=staging / "sync-map.json",
+            profile_id=profile_id,
+            binding_id=binding_id,
+            metadata=metadata,
+            output_path=staging / "string-out.fcpxml",
+        )
+        _require_inputs_unchanged(
+            source_hashes, model_path=selected_model, model_sha256=model_sha256
+        )
+        artifacts = _artifact_records(staging, "prepared")
+        stages = [
+            {
+                "name": "doctor",
+                "inputHashes": {
+                    "binding": binding_hash,
+                    "model": model_sha256,
+                    "profile": profile_hash,
+                },
+                "outputHashes": {
+                    "doctorReceipt": artifacts["doctorReceipt"]["sha256"]
+                },
+            },
+            {
+                "name": "sync",
+                "inputHashes": {"sourceSet": source_set_hash},
+                "outputHashes": {"syncMap": artifacts["syncMap"]["sha256"]},
+            },
+            {
+                "name": "transcribe",
+                "inputHashes": {
+                    "model": model_sha256,
+                    "transcribedSources": transcribed_hash,
+                },
+                "outputHashes": {
+                    "transcriptBundle": artifacts["transcriptBundle"]["sha256"]
+                },
+            },
+            {
+                "name": "emit",
+                "inputHashes": {
+                    "binding": binding_hash,
+                    "profile": profile_hash,
+                    "sourceSet": source_set_hash,
+                    "syncMap": artifacts["syncMap"]["sha256"],
+                },
+                "outputHashes": {"stringOut": artifacts["stringOut"]["sha256"]},
+            },
+        ]
+        return build_manifest(
+            run_id=run_id,
+            profile_id=profile_id,
+            binding_id=binding_id,
+            phase="prepared",
+            manifest_chain=[],
+            sources=inventory,
+            stages=stages,
+            artifacts=artifacts,
+        )
+
+    return summarize_bundle(publish_bundle(Path(output_dir), build))
+
+
+def _require_bundle_unchanged(bundle: LoadedRunBundle) -> None:
+    try:
+        current = load_bundle(bundle.root, expected_phase=str(bundle.manifest["phase"]))
+    except ValueError as error:
+        raise ValueError("TRITRACK_RUN_INPUT_CHANGED") from error
+    if current.manifest_sha256 != bundle.manifest_sha256:
+        raise ValueError("TRITRACK_RUN_INPUT_CHANGED")
+
+
+def align_run(
+    prepared_dir: Path,
+    revision_path: Path,
+    *,
+    output_dir: Path,
+) -> dict[str, object]:
+    """Consume one complete prepared run and publish an aligned paper bundle."""
+
+    process.require_absent_output(output_dir)
+    prepared = load_bundle(prepared_dir, expected_phase="prepared")
+    revision = align_text.load_json_artifact(
+        Path(revision_path),
+        contract="text-revision-v1",
+        invalid_code="TRITRACK_ALIGNMENT_REVISION_INVALID",
+    )
+
+    def build(staging: Path) -> dict[str, object]:
+        align_text.align_and_publish(
+            prepared.artifacts["transcriptBundle"].path,
+            revision.path,
+            output_path=staging / "aligned-transcript.json",
+        )
+        paper_edit.export_workbook(
+            staging / "aligned-transcript.json",
+            grouping_path=None,
+            output_path=staging / "paper-edit.xlsx",
+        )
+        align_text.verify_artifact_unchanged(revision)
+        _require_bundle_unchanged(prepared)
+        artifacts = _artifact_records(staging, "aligned")
+        stages = [
+            {
+                "name": "align",
+                "inputHashes": {
+                    "preparedManifest": prepared.manifest_sha256,
+                    "revision": revision.sha256,
+                    "transcriptBundle": prepared.artifacts[
+                        "transcriptBundle"
+                    ].sha256,
+                },
+                "outputHashes": {
+                    "alignedTranscript": artifacts["alignedTranscript"]["sha256"]
+                },
+            },
+            {
+                "name": "paper",
+                "inputHashes": {
+                    "alignedTranscript": artifacts["alignedTranscript"]["sha256"]
+                },
+                "outputHashes": {
+                    "paperWorkbook": artifacts["paperWorkbook"]["sha256"]
+                },
+            },
+        ]
+        return build_manifest(
+            run_id=str(prepared.manifest["runId"]),
+            profile_id=str(prepared.manifest["profileId"]),
+            binding_id=str(prepared.manifest["bindingId"]),
+            phase="aligned",
+            manifest_chain=[prepared.manifest_sha256],
+            sources=prepared.manifest["sources"],
+            stages=stages,
+            artifacts=artifacts,
+        )
+
+    return summarize_bundle(publish_bundle(Path(output_dir), build))
