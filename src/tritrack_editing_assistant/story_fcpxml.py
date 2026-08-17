@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import stat
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -10,11 +15,21 @@ from pathlib import Path
 
 from jsonschema import ValidationError
 
-from . import contracts, doctor, organizer, string_out
+from . import (
+    contracts,
+    doctor,
+    emit_fcpxml,
+    organizer,
+    process,
+    string_out,
+    sync_scan,
+)
 
 _SOURCE_FIELDS = frozenset(
     {"camera", "media_id", "path", "duration_seconds", "sha256"}
 )
+_JSON_LIMIT_BYTES = 16 * 1024 * 1024
+_HASH_CHUNK_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -71,6 +86,15 @@ class _SourceRelationship:
     source_b: StorySource | None
     offset_b_from_a_frames: int
     audio_master: str
+
+
+@dataclass(frozen=True)
+class _LoadedArtifact:
+    path: Path
+    payload: object
+    encoded: bytes
+    sha256: str
+    invalid_code: str
 
 
 def _validate_contract(name: str, payload: object, code: str) -> None:
@@ -396,3 +420,387 @@ def build_story_timeline(
         sources=normalized_sources,
         segments=tuple(story_segments),
     )
+
+
+def _frame_time(timeline: StoryTimeline, frames: int) -> str:
+    if frames == 0:
+        return "0s"
+    return f"{frames * timeline.frame_numerator}/{timeline.frame_denominator}s"
+
+
+def _style_values(binding: Mapping[str, object]) -> dict[str, str]:
+    parameters = binding["parameters"]
+    if not isinstance(parameters, list):
+        raise TypeError("TRITRACK_STORY_BINDING_INVALID")
+    values = {
+        str(parameter["name"]): str(parameter["value"])
+        for parameter in parameters
+        if isinstance(parameter, Mapping)
+    }
+    expected = {"alignment", "font", "fontColor", "fontFace", "fontSize"}
+    if set(values) != expected:
+        raise ValueError("TRITRACK_STORY_BINDING_INVALID")
+    return values
+
+
+def _validate_timeline(timeline: StoryTimeline) -> None:
+    if not isinstance(timeline, StoryTimeline) or timeline.duration_frames <= 0:
+        raise TypeError("TRITRACK_STORY_TIMELINE_INVALID")
+    source_keys = [(source.camera, source.media_id) for source in timeline.sources]
+    if source_keys != sorted(source_keys) or len(source_keys) != len(set(source_keys)):
+        raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+    source_by_key = {
+        (source.camera, source.media_id): source for source in timeline.sources
+    }
+    cursor = 0
+    for segment in timeline.segments:
+        if (
+            segment.offset_frames != cursor
+            or segment.duration_frames <= 0
+            or not segment.title_text
+            or not segment.clips
+            or sum(clip.audio_enabled for clip in segment.clips) != 1
+        ):
+            raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+        for clip in segment.clips:
+            source = source_by_key.get((clip.camera, clip.media_id))
+            if (
+                source is None
+                or clip.path != source.path
+                or clip.offset_frames < segment.offset_frames
+                or clip.start_frames < 0
+                or clip.duration_frames <= 0
+                or clip.start_frames + clip.duration_frames > source.duration_frames
+                or clip.offset_frames + clip.duration_frames
+                > segment.offset_frames + segment.duration_frames
+            ):
+                raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+        cursor += segment.duration_frames
+    if cursor != timeline.duration_frames:
+        raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+
+
+def render_story_fcpxml(
+    timeline: StoryTimeline,
+    *,
+    profile_id: str,
+    binding_id: str,
+    metadata: emit_fcpxml.ProjectMetadata,
+) -> str:
+    """Render one deterministic Final Cut XML projection of a story timeline."""
+
+    _validate_timeline(timeline)
+    if not isinstance(metadata, emit_fcpxml.ProjectMetadata):
+        raise TypeError("TRITRACK_EMIT_METADATA_INVALID")
+    profile = doctor.load_profile(profile_id)
+    binding = doctor.load_title_binding(binding_id)
+    if timeline.profile_id != profile_id:
+        raise ValueError("TRITRACK_STORY_PROFILE_MISMATCH")
+    styles = _style_values(binding)
+
+    root = ET.Element("fcpxml", {"version": str(profile["fcpxmlVersion"])})
+    resources_element = ET.SubElement(root, "resources")
+    ET.SubElement(
+        resources_element,
+        "format",
+        {
+            "id": "r1",
+            "name": emit_fcpxml.FORMAT_NAME,
+            "frameDuration": str(profile["frameDuration"]),
+            "width": str(profile["width"]),
+            "height": str(profile["height"]),
+            "colorSpace": str(profile["colorSpace"]),
+        },
+    )
+    ET.SubElement(
+        resources_element,
+        "effect",
+        {
+            "id": "r2",
+            "name": str(binding["effectName"]),
+            "uid": str(binding["effectUid"]),
+        },
+    )
+    source_ids: dict[tuple[str, str], str] = {}
+    for index, source in enumerate(timeline.sources, start=3):
+        resource_id = f"r{index}"
+        source_ids[(source.camera, source.media_id)] = resource_id
+        asset = ET.SubElement(
+            resources_element,
+            "asset",
+            {
+                "id": resource_id,
+                "name": source.media_id,
+                "start": "0s",
+                "duration": _frame_time(timeline, source.duration_frames),
+                "hasVideo": "1",
+                "hasAudio": "1",
+                "format": "r1",
+                "audioSources": "1",
+                "audioChannels": "2",
+                "audioRate": f"{int(profile['audioRate']) // 1000}k",
+            },
+        )
+        ET.SubElement(
+            asset,
+            "media-rep",
+            {"kind": "original-media", "src": source.path.absolute().as_uri()},
+        )
+
+    library = ET.SubElement(root, "library")
+    event = ET.SubElement(library, "event", {"name": metadata.event_name})
+    project = ET.SubElement(event, "project", {"name": metadata.project_name})
+    sequence = ET.SubElement(
+        project,
+        "sequence",
+        {
+            "format": "r1",
+            "duration": _frame_time(timeline, timeline.duration_frames),
+            "tcStart": "0s",
+            "tcFormat": str(profile["timecodeFormat"]),
+            "audioLayout": "stereo",
+            "audioRate": f"{int(profile['audioRate']) // 1000}k",
+        },
+    )
+    spine = ET.SubElement(sequence, "spine")
+    for index, segment in enumerate(timeline.segments, start=1):
+        gap = ET.SubElement(
+            spine,
+            "gap",
+            {
+                "name": segment.segment_id,
+                "offset": _frame_time(timeline, segment.offset_frames),
+                "start": "0s",
+                "duration": _frame_time(timeline, segment.duration_frames),
+            },
+        )
+        for lane, clip in enumerate(segment.clips, start=1):
+            attributes = {
+                "ref": source_ids[(clip.camera, clip.media_id)],
+                "lane": str(lane),
+                "offset": _frame_time(timeline, clip.offset_frames),
+                "name": clip.media_id,
+                "start": _frame_time(timeline, clip.start_frames),
+                "duration": _frame_time(timeline, clip.duration_frames),
+                "srcEnable": "all" if clip.audio_enabled else "video",
+            }
+            if clip.audio_enabled:
+                attributes["audioRole"] = "dialogue"
+            ET.SubElement(gap, "asset-clip", attributes)
+        title = ET.SubElement(
+            gap,
+            "title",
+            {
+                "ref": "r2",
+                "lane": str(len(segment.clips) + 1),
+                "offset": _frame_time(timeline, segment.offset_frames),
+                "name": f"{segment.segment_id} - Basic Title",
+                "start": "0s",
+                "duration": _frame_time(timeline, segment.duration_frames),
+            },
+        )
+        text_element = ET.SubElement(title, "text")
+        style_id = f"ts{index:03d}"
+        text_style = ET.SubElement(text_element, "text-style", {"ref": style_id})
+        text_style.text = segment.title_text
+        definition = ET.SubElement(title, "text-style-def", {"id": style_id})
+        ET.SubElement(
+            definition,
+            "text-style",
+            {
+                name: styles[name]
+                for name in (
+                    "alignment",
+                    "font",
+                    "fontColor",
+                    "fontFace",
+                    "fontSize",
+                )
+            },
+        )
+
+    ET.indent(root, space="    ")
+    body = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    rendered = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f"{emit_fcpxml.ALLOWED_DOCTYPE}\n{body}\n"
+    )
+    emit_fcpxml.validate_fcpxml(rendered, profile=profile, binding=binding)
+    return rendered
+
+
+def _read_regular_bytes(path: Path, invalid_code: str) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError(invalid_code) from error
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or not 0 < metadata.st_size <= _JSON_LIMIT_BYTES
+        ):
+            raise ValueError(invalid_code)
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            encoded = stream.read(_JSON_LIMIT_BYTES + 1)
+        if len(encoded) > _JSON_LIMIT_BYTES:
+            raise ValueError(invalid_code)
+        return encoded
+    except OSError as error:
+        raise ValueError(invalid_code) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _load_artifact(path: Path, *, contract: str, code: str) -> _LoadedArtifact:
+    selected = Path(path)
+    encoded = _read_regular_bytes(selected, code)
+    try:
+        payload = json.loads(
+            encoded.decode("utf-8", errors="strict"), parse_float=Decimal
+        )
+        contracts.validate_contract(contract, payload)
+    except (UnicodeError, json.JSONDecodeError, ValidationError) as error:
+        raise ValueError(code) from error
+    return _LoadedArtifact(
+        path=selected,
+        payload=payload,
+        encoded=encoded,
+        sha256=hashlib.sha256(encoded).hexdigest(),
+        invalid_code=code,
+    )
+
+
+def _verify_artifact(artifact: _LoadedArtifact) -> None:
+    try:
+        encoded = _read_regular_bytes(artifact.path, artifact.invalid_code)
+    except ValueError as error:
+        raise ValueError("TRITRACK_STORY_INPUT_CHANGED") from error
+    if hashlib.sha256(encoded).hexdigest() != artifact.sha256:
+        raise ValueError("TRITRACK_STORY_INPUT_CHANGED")
+
+
+def _hash_regular_media(path: Path) -> str:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError("TRITRACK_STORY_SOURCE_UNREADABLE") from error
+    digest = hashlib.sha256()
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
+            raise ValueError("TRITRACK_STORY_SOURCE_UNREADABLE")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            while chunk := stream.read(_HASH_CHUNK_BYTES):
+                digest.update(chunk)
+    except OSError as error:
+        raise ValueError("TRITRACK_STORY_SOURCE_UNREADABLE") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return digest.hexdigest()
+
+
+def emit_story_and_publish(
+    camera_a_sources: Sequence[sync_scan.MediaSource],
+    camera_b_sources: Sequence[sync_scan.MediaSource],
+    *,
+    sync_map_path: Path,
+    aligned_path: Path,
+    grouping_path: Path,
+    working_cut_path: Path,
+    profile_id: str,
+    binding_id: str,
+    metadata: emit_fcpxml.ProjectMetadata,
+    output_path: Path,
+) -> str:
+    """Load exact authorities, render a story cut, and publish without overwrite."""
+
+    destination = process.require_absent_output(output_path)
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    sync_map = _load_artifact(
+        sync_map_path, contract="sync-map-v1", code="TRITRACK_STORY_SYNC_INVALID"
+    )
+    aligned = _load_artifact(
+        aligned_path,
+        contract="aligned-transcript-v1",
+        code="TRITRACK_STORY_ALIGNED_INVALID",
+    )
+    grouping = _load_artifact(
+        grouping_path,
+        contract="grouping-v1",
+        code="TRITRACK_STORY_GROUPING_INVALID",
+    )
+    working_cut = _load_artifact(
+        working_cut_path,
+        contract="working-cut-v1",
+        code="TRITRACK_STORY_WORKING_CUT_INVALID",
+    )
+    if grouping.encoded != organizer.encode_grouping(grouping.payload):
+        raise ValueError("TRITRACK_STORY_GROUPING_NONCANONICAL")
+    if working_cut.encoded != organizer.encode_working_cut(working_cut.payload):
+        raise ValueError("TRITRACK_STORY_WORKING_CUT_NONCANONICAL")
+
+    profile = doctor.load_profile(profile_id)
+    doctor.load_title_binding(binding_id)
+    source_hashes = {
+        (camera, source.media_id): _hash_regular_media(source.path)
+        for camera, camera_sources in (
+            ("A", camera_a_sources),
+            ("B", camera_b_sources),
+        )
+        for source in camera_sources
+    }
+    probed = emit_fcpxml.probe_sources(
+        camera_a_sources, camera_b_sources, profile=profile
+    )
+    sources = [
+        {**source, "sha256": source_hashes[(source["camera"], source["media_id"])]}
+        for source in probed
+    ]
+    assert isinstance(sync_map.payload, Mapping)
+    assert isinstance(aligned.payload, Mapping)
+    assert isinstance(grouping.payload, Mapping)
+    assert isinstance(working_cut.payload, Mapping)
+    timeline = build_story_timeline(
+        sync_map.payload,
+        aligned.payload,
+        grouping.payload,
+        working_cut.payload,
+        sources,
+        aligned_sha256=aligned.sha256,
+        grouping_sha256=grouping.sha256,
+        profile=profile,
+    )
+    rendered = render_story_fcpxml(
+        timeline,
+        profile_id=profile_id,
+        binding_id=binding_id,
+        metadata=metadata,
+    )
+    for artifact in (sync_map, aligned, grouping, working_cut):
+        _verify_artifact(artifact)
+    for camera, camera_sources in (
+        ("A", camera_a_sources),
+        ("B", camera_b_sources),
+    ):
+        for source in camera_sources:
+            if _hash_regular_media(source.path) != source_hashes[(camera, source.media_id)]:
+                raise ValueError("TRITRACK_STORY_INPUT_CHANGED")
+    emit_fcpxml.publish_fcpxml(
+        destination,
+        rendered,
+        profile=profile,
+        binding=doctor.load_title_binding(binding_id),
+    )
+    return rendered

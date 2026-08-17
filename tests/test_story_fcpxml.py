@@ -1,9 +1,20 @@
 import copy
+import hashlib
+import json
+import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 
-from tritrack_editing_assistant import doctor, organizer, story_fcpxml
+from tritrack_editing_assistant import (
+    doctor,
+    emit_fcpxml,
+    organizer,
+    story_fcpxml,
+    sync_scan,
+)
 
 ALIGNED_SHA = "1" * 64
 GROUPING_SHA = "2" * 64
@@ -373,6 +384,365 @@ class StoryTimelineTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "TRITRACK_STORY_WORKING_CUT_DRIFT"):
             self.build(working_cut=working_cut)
+
+
+class StoryRenderingTest(unittest.TestCase):
+    def timeline(self) -> story_fcpxml.StoryTimeline:
+        aligned = invented_aligned()
+        grouping = invented_grouping()
+        return story_fcpxml.build_story_timeline(
+            invented_sync_map(),
+            aligned,
+            grouping,
+            invented_working_cut(aligned, grouping),
+            invented_sources(),
+            aligned_sha256=ALIGNED_SHA,
+            grouping_sha256=GROUPING_SHA,
+            profile=doctor.load_profile("uhd-2997-ndf-fcpxml-1.14"),
+        )
+
+    def test_renders_deterministic_profile_bound_story_xml(self) -> None:
+        timeline = self.timeline()
+        metadata = emit_fcpxml.ProjectMetadata("Interview & more", "Story cut")
+
+        first = story_fcpxml.render_story_fcpxml(
+            timeline,
+            profile_id="uhd-2997-ndf-fcpxml-1.14",
+            binding_id="basic-title-v1",
+            metadata=metadata,
+        )
+        second = story_fcpxml.render_story_fcpxml(
+            timeline,
+            profile_id="uhd-2997-ndf-fcpxml-1.14",
+            binding_id="basic-title-v1",
+            metadata=metadata,
+        )
+
+        self.assertEqual(first, second)
+        self.assertIn("Interview &amp; more", first)
+        profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")
+        binding = doctor.load_title_binding("basic-title-v1")
+        emit_fcpxml.validate_fcpxml(first, profile=profile, binding=binding)
+        root = ET.fromstring(first)
+        sequence = root.find("./library/event/project/sequence")
+        assert sequence is not None
+        self.assertEqual(sequence.attrib["duration"], "105105/30000s")
+        gaps = root.findall("./library/event/project/sequence/spine/gap")
+        self.assertEqual(
+            [gap.attrib["name"] for gap in gaps],
+            ["answer-opening", "answer-paired"],
+        )
+        self.assertEqual(
+            [gap.find("./title/text/text-style").text for gap in gaps],
+            [
+                "Opening thought.",
+                "First paired thought. Second paired thought.",
+            ],
+        )
+        paired_clips = gaps[1].findall("./asset-clip")
+        self.assertEqual(
+            [
+                (
+                    clip.attrib["name"],
+                    clip.attrib["offset"],
+                    clip.attrib["start"],
+                    clip.attrib["duration"],
+                    clip.attrib["srcEnable"],
+                )
+                for clip in paired_clips
+            ],
+            [
+                (
+                    "A-001.MP4",
+                    "30030/30000s",
+                    "30030/30000s",
+                    "75075/30000s",
+                    "video",
+                ),
+                (
+                    "B-001.MP4",
+                    "30030/30000s",
+                    "0s",
+                    "75075/30000s",
+                    "all",
+                ),
+            ],
+        )
+
+
+class StoryFileBoundaryTest(unittest.TestCase):
+    def write_inputs(
+        self, root: Path
+    ) -> tuple[
+        list[sync_scan.MediaSource],
+        list[sync_scan.MediaSource],
+        dict[str, Path],
+        dict[Path, bytes],
+    ]:
+        source_paths = {
+            "A-001.MP4": root / "A-001.MP4",
+            "A-002.MP4": root / "A-002.MP4",
+            "B-001.MP4": root / "B-001.MP4",
+        }
+        source_bytes = {
+            "A-001.MP4": b"invented-camera-a-one",
+            "A-002.MP4": b"invented-camera-a-two",
+            "B-001.MP4": b"invented-camera-b-one",
+        }
+        for media_id, path in source_paths.items():
+            path.write_bytes(source_bytes[media_id])
+
+        aligned = invented_aligned()
+        for take in aligned["takes"]:
+            take["sourceSha256"] = hashlib.sha256(
+                source_bytes[take["takeId"]]
+            ).hexdigest()
+        aligned_bytes = (
+            json.dumps(aligned, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        aligned_path = root / "aligned-transcript.json"
+        aligned_path.write_bytes(aligned_bytes)
+
+        grouping = invented_grouping()
+        grouping["alignedTranscriptSha256"] = hashlib.sha256(
+            aligned_bytes
+        ).hexdigest()
+        grouping_bytes = organizer.encode_grouping(grouping)
+        grouping_path = root / "grouping.json"
+        grouping_path.write_bytes(grouping_bytes)
+
+        working_cut = organizer.build_working_cut(
+            aligned,
+            grouping,
+            aligned_sha256=hashlib.sha256(aligned_bytes).hexdigest(),
+            grouping_sha256=hashlib.sha256(grouping_bytes).hexdigest(),
+        )
+        working_cut_bytes = organizer.encode_working_cut(working_cut)
+        working_cut_path = root / "working-cut.json"
+        working_cut_path.write_bytes(working_cut_bytes)
+
+        sync_bytes = (
+            json.dumps(
+                invented_sync_map(), ensure_ascii=False, indent=2, sort_keys=True
+            )
+            + "\n"
+        ).encode("utf-8")
+        sync_path = root / "sync-map.json"
+        sync_path.write_bytes(sync_bytes)
+        paths = {
+            "sync": sync_path,
+            "aligned": aligned_path,
+            "grouping": grouping_path,
+            "working": working_cut_path,
+        }
+        before = {
+            **{path: path.read_bytes() for path in source_paths.values()},
+            **{path: path.read_bytes() for path in paths.values()},
+        }
+        return (
+            [
+                sync_scan.MediaSource("A-001.MP4", source_paths["A-001.MP4"]),
+                sync_scan.MediaSource("A-002.MP4", source_paths["A-002.MP4"]),
+            ],
+            [sync_scan.MediaSource("B-001.MP4", source_paths["B-001.MP4"])],
+            paths,
+            before,
+        )
+
+    @staticmethod
+    def probe(media_id: str) -> dict[str, object]:
+        durations = {"A-001.MP4": 10.0, "A-002.MP4": 6.0, "B-001.MP4": 8.0}
+        return {
+            "duration_seconds": durations[media_id],
+            "compatibility": {
+                "videoStreamCount": 1,
+                "audioStreamCount": 1,
+                "width": 3840,
+                "height": 2160,
+                "frameRate": "30000/1001",
+                "colorSpace": "bt709",
+                "colorTransfer": "bt709",
+                "colorPrimaries": "bt709",
+                "sampleRate": "48000",
+                "channels": 2,
+            },
+        }
+
+    def emit(
+        self,
+        camera_a: list[sync_scan.MediaSource],
+        camera_b: list[sync_scan.MediaSource],
+        paths: dict[str, Path],
+        output: Path,
+    ) -> str:
+        return story_fcpxml.emit_story_and_publish(
+            camera_a,
+            camera_b,
+            sync_map_path=paths["sync"],
+            aligned_path=paths["aligned"],
+            grouping_path=paths["grouping"],
+            working_cut_path=paths["working"],
+            profile_id="uhd-2997-ndf-fcpxml-1.14",
+            binding_id="basic-title-v1",
+            metadata=emit_fcpxml.ProjectMetadata("Interview", "Story cut"),
+            output_path=output,
+        )
+
+    def test_publishes_exact_story_xml_without_mutating_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, before = self.write_inputs(root)
+            output = root / "story-cut.fcpxml"
+            with mock.patch.object(
+                sync_scan,
+                "probe_media",
+                side_effect=lambda source: self.probe(source.media_id),
+            ):
+                rendered = self.emit(camera_a, camera_b, paths, output)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), rendered)
+            self.assertTrue(rendered.endswith("\n"))
+            self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    def test_existing_output_and_missing_parent_fail_before_input_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "story-cut.fcpxml"
+            output.write_text("winner", encoding="utf-8")
+            missing = {
+                "sync": root / "missing-sync",
+                "aligned": root / "missing-aligned",
+                "grouping": root / "missing-grouping",
+                "working": root / "missing-working",
+            }
+            with (
+                mock.patch.object(emit_fcpxml, "probe_sources") as probe,
+                self.assertRaisesRegex(ValueError, "TRITRACK_OUTPUT_EXISTS"),
+            ):
+                self.emit([], [], missing, output)
+            probe.assert_not_called()
+            self.assertEqual(output.read_text(encoding="utf-8"), "winner")
+
+            with (
+                mock.patch.object(emit_fcpxml, "probe_sources") as probe,
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_OUTPUT_PARENT_MISSING"
+                ),
+            ):
+                self.emit([], [], missing, root / "absent" / "story.fcpxml")
+            probe.assert_not_called()
+
+    def test_rejects_malformed_symlink_and_noncanonical_authorities(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            paths["sync"].write_bytes(b"not-json")
+            with self.assertRaisesRegex(ValueError, "TRITRACK_STORY_SYNC_INVALID"):
+                self.emit(camera_a, camera_b, paths, root / "malformed.fcpxml")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            target = root / "aligned-target.json"
+            target.write_bytes(paths["aligned"].read_bytes())
+            paths["aligned"].unlink()
+            paths["aligned"].symlink_to(target)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_STORY_ALIGNED_INVALID"
+            ):
+                self.emit(camera_a, camera_b, paths, root / "symlink.fcpxml")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            grouping = json.loads(paths["grouping"].read_text(encoding="utf-8"))
+            paths["grouping"].write_text(
+                json.dumps(grouping, separators=(",", ":")), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_STORY_GROUPING_NONCANONICAL"
+            ):
+                self.emit(camera_a, camera_b, paths, root / "compact.fcpxml")
+
+    def test_late_source_mutation_is_detected_before_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            mutated = False
+
+            def mutating_probe(source: sync_scan.MediaSource) -> dict[str, object]:
+                nonlocal mutated
+                result = self.probe(source.media_id)
+                if not mutated:
+                    source.path.write_bytes(b"changed-after-first-hash")
+                    mutated = True
+                return result
+
+            with (
+                mock.patch.object(
+                    sync_scan, "probe_media", side_effect=mutating_probe
+                ),
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_STORY_INPUT_CHANGED"
+                ),
+            ):
+                self.emit(camera_a, camera_b, paths, root / "changed.fcpxml")
+            self.assertFalse((root / "changed.fcpxml").exists())
+
+    def test_late_symlink_swap_is_reported_as_input_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            original_render = story_fcpxml.render_story_fcpxml
+            target = root / "late-target.json"
+            target.write_bytes(paths["aligned"].read_bytes())
+
+            def render_then_swap(*args, **kwargs):
+                rendered = original_render(*args, **kwargs)
+                paths["aligned"].unlink()
+                paths["aligned"].symlink_to(target)
+                return rendered
+
+            with (
+                mock.patch.object(
+                    sync_scan,
+                    "probe_media",
+                    side_effect=lambda source: self.probe(source.media_id),
+                ),
+                mock.patch.object(
+                    story_fcpxml,
+                    "render_story_fcpxml",
+                    side_effect=render_then_swap,
+                ),
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_STORY_INPUT_CHANGED"
+                ),
+            ):
+                self.emit(camera_a, camera_b, paths, root / "late.fcpxml")
+            self.assertFalse((root / "late.fcpxml").exists())
+
+    def test_publication_race_preserves_the_winner_and_cleans_temporary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            output = root / "race.fcpxml"
+
+            def racing_link(_temporary: Path, destination: Path) -> None:
+                Path(destination).write_text("race-winner", encoding="utf-8")
+                raise FileExistsError
+
+            with (
+                mock.patch.object(
+                    sync_scan,
+                    "probe_media",
+                    side_effect=lambda source: self.probe(source.media_id),
+                ),
+                mock.patch.object(emit_fcpxml.os, "link", side_effect=racing_link),
+                self.assertRaisesRegex(ValueError, "TRITRACK_OUTPUT_EXISTS"),
+            ):
+                self.emit(camera_a, camera_b, paths, output)
+            self.assertEqual(output.read_text(encoding="utf-8"), "race-winner")
+            self.assertEqual(list(root.glob(".*.tmp")), [])
 
 
 if __name__ == "__main__":
