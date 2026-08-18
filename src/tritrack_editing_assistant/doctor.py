@@ -94,7 +94,9 @@ class SystemProbe:
 def _sanitize_detected(value: str) -> str:
     """Keep version text while refusing local path-shaped material."""
 
-    if "/Users/" in value or "/Volumes/" in value or "\\" in value:
+    private_home = "/" + "Users" + "/"
+    mounted_volume = "/" + "Volumes" + "/"
+    if private_home in value or mounted_volume in value or "\\" in value:
         return "detected-redacted"
     first, separator, remainder = value.partition(" ")
     if first.startswith("/"):

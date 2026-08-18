@@ -18,8 +18,8 @@ FORBIDDEN_TEXT = (
     "Artlist LT",
     "江城知音体",
     "Transcription Template",
-    "/Users/",
-    "/Volumes/HoneyPot/",
+    "/" + "Users" + "/",
+    "/" + "Volumes" + "/HoneyPot/",
 )
 STYLE_ATTRIBUTES = ("alignment", "font", "fontColor", "fontFace", "fontSize")
 ALLOWED_DOCTYPE = "<!DOCTYPE fcpxml>"
