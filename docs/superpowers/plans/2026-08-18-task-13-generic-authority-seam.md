@@ -44,6 +44,7 @@ git commit -m "docs: approve Task 13 downstream seam"
 - Create: `examples/downstream_seam.py`
 - Create: `examples/downstream_fixture/aligned-transcript.json`
 - Create: `tests/test_downstream_seam.py`
+- Create: `docs/TASK-13-VERIFICATION.md`
 
 - [ ] **Step 1: Add the invented authority fixture**
 
@@ -325,7 +326,7 @@ git commit -m "build: exercise the downstream seam in fresh wheels"
 - Modify: `docs/ROADMAP.md`
 - Modify: `docs/TOOLING.md`
 - Modify: `STATUS.md`
-- Create: `docs/TASK-13-VERIFICATION.md`
+- Modify: `docs/TASK-13-VERIFICATION.md`
 - Modify: `tests/test_maintainer_boundary.py`
 
 - [ ] **Step 1: Write the failing governance regression**
