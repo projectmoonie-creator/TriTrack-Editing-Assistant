@@ -155,6 +155,20 @@ attempt ledger are preserved in
 `docs/reviews/claude-incomplete-audit-2026-08-18.md` and the matching
 `tasks-7-11-claude-recovery-*` records.
 
+A later producer-mediated interactive Claude Code review against public
+`main` commit `7ae540a1ab46de39b31d826ae99752b325e6e9e1` returned
+`NO FINDINGS` plus four optional hardening observations. Fix-forward commit
+`eaa17b49c9100bf92452106c1de23392a2831ae5` maps third-party workbook parser
+`ValueError` failures to the stable public code, makes current working-cut
+claims precisely `transcript-text-free`, and adds direct noncanonical
+working-cut regression coverage. The hypothetical inner-pipe engine-token
+observation was not accepted without a supported token or failing contract.
+The complete suite passed 240 tests; Ruff, compilation, project identity, both
+skill validators, and diff checks also passed. The interactive session's model
+and usage provenance remain self-reported, and the result does not convert any
+earlier wrapper timeout or ambiguous dispatch into formal completion. Public
+review and adjudication records are in `docs/reviews/tasks-7-11-claude-manual-*`.
+
 ## Next action
 
 Task 12 freezes and independently reviews the alpha candidate. Task 11 does

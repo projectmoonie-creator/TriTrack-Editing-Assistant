@@ -182,3 +182,36 @@ The focused GREEN set passed 15 tests, the expanded complete suite passed 238
 tests, Ruff and compilation passed, packaging policy tests passed twice, and
 `git diff --check` passed. Complete classification and RED／GREEN evidence are
 in `docs/reviews/task-11-closeout-adjudication-2026-08-17.md`.
+
+## Producer-mediated manual Claude review and fix-forward
+
+A later producer-mediated interactive Claude Code subscription review inspected
+public `main` commit `7ae540a1ab46de39b31d826ae99752b325e6e9e1` and returned
+`NO FINDINGS`. Its exact response SHA-256 is
+`ffd6a408fd755ede13c5e1c5946f9aeef09a4449737edcba8416c0870ca47d09`.
+The session self-reported model text `claude-opus-5[1m]` and unverified usage;
+the apparent formatting residue is preserved and is not represented as an
+audit-wrapper model observation.
+
+Of its four optional hardening observations, Codex reproduced and upgraded two
+minor defects: a third-party openpyxl `ValueError` could escape the stable CLI
+code boundary, and “text-free working cut” overstated an artifact that retains
+editor-authored text. The fixes now map the parser failure to
+`TRITRACK_PAPER_WORKBOOK_INVALID` and describe the artifact as
+`transcript-text-free`. A third observation became direct regression coverage
+for noncanonical working-cut bytes; that test passed before product-code edits,
+confirming the implementation was already correct. The hypothetical inner-pipe
+engine token was rejected as a current defect because no supported token or
+failing contract was identified.
+
+Fix-forward commit `eaa17b49c9100bf92452106c1de23392a2831ae5` contains the
+changes and review records. Focused RED failed on the two reproduced defects
+while the coverage-only regression passed; focused GREEN passed all three.
+The complete suite then passed 240 tests, and Ruff, compilation, public project
+identity, both canonical skill validators, and `git diff --check` passed.
+
+This manual result is useful independent evidence but is not a replay or
+completion of a prior wrapper attempt. Every historical `claude-timeout`
+record retains its original incomplete and ambiguous-dispatch state. Complete
+provenance and item-by-item classification are in the matching
+`tasks-7-11-claude-manual-*` review records.

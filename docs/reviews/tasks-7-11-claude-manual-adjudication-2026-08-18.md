@@ -63,6 +63,13 @@ source-backed engine contract would justify reopening this decision.
 
 ## Verification state
 
-The focused RED／GREEN evidence and complete repository verification are
-recorded in the final Task 11 closeout. No optional observation was accepted
-without either a reproduction or a narrowly scoped coverage assertion.
+Fix-forward commit `eaa17b49c9100bf92452106c1de23392a2831ae5`
+contains the two fixes, three regressions, review record, and adjudication.
+The focused RED run failed on the workbook error and public wording as
+expected; the new working-cut regression was already green and therefore
+proved only a missing test. The focused GREEN run passed all three tests.
+
+The complete suite then passed 240 tests. Ruff, `compileall`, public project
+identity, both canonical skill validators, and `git diff --check` also passed.
+No optional observation was accepted without either a reproduction or a
+narrowly scoped coverage assertion.
