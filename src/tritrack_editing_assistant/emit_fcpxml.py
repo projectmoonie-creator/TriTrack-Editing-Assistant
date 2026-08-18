@@ -44,6 +44,7 @@ def load_sync_map(path: str | os.PathLike[str]) -> dict[str, object]:
 
     source = Path(path)
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(source, flags)

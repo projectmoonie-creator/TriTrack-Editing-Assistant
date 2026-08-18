@@ -102,6 +102,33 @@ def _tar(
 
 
 class SourceGateTest(unittest.TestCase):
+    @unittest.skipUnless(
+        hasattr(os, "O_NONBLOCK"), "POSIX nonblocking flag required"
+    )
+    def test_gate_descriptor_readers_reject_special_files_before_blocking(self) -> None:
+        selected = Path("invented-special-file")
+        readers = (
+            lambda: release_gate_core._read_regular(selected, 1),
+            lambda: release_gate_core._read_archive_bytes(selected, _policy()),
+            lambda: release_gate_core._verify_published_archive(
+                selected, (1, "a" * 64)
+            ),
+        )
+
+        for reader in readers:
+            observed: list[int] = []
+
+            def reject_special(_path, flags, *_args, observed=observed):
+                observed.append(flags)
+                raise OSError("invented special file")
+
+            with self.subTest(reader=reader), mock.patch.object(
+                release_gate_core.os, "open", side_effect=reject_special
+            ), self.assertRaises(release_gate_core.ReleaseGateError):
+                reader()
+            self.assertEqual(len(observed), 1)
+            self.assertTrue(observed[0] & os.O_NONBLOCK)
+
     def test_clean_stage_zero_regular_source_is_inventory_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

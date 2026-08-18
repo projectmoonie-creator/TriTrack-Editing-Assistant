@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +16,14 @@ from tests.test_contracts import VALID_CONTRACTS
 from tests.test_emit_fcpxml import media, sync_payload
 from tests.test_run_workflow import aligned_bundle_files, aligned_manifest, sha256
 from tritrack_editing_assistant import (
+    align_text,
     contracts,
     emit_fcpxml,
+    organizer,
+    paper_edit,
     process,
     run_workflow,
+    story_fcpxml,
     validate_artifacts,
 )
 
@@ -26,6 +32,98 @@ def encode_json(payload: object) -> bytes:
     return (
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
+
+
+class NonblockingRegularFileBoundaryTest(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, "O_NONBLOCK"), "POSIX nonblocking flag required")
+    def test_all_descriptor_readers_reject_special_files_before_blocking(self) -> None:
+        selected = Path("invented-special-file")
+        readers = (
+            (
+                "alignment JSON",
+                align_text,
+                lambda: align_text._read_regular_bytes(selected, "INVENTED"),
+            ),
+            ("sync map", emit_fcpxml, lambda: emit_fcpxml.load_sync_map(selected)),
+            (
+                "organizer JSON",
+                organizer,
+                lambda: organizer._read_regular_bytes(selected, "INVENTED"),
+            ),
+            (
+                "paper artifact",
+                paper_edit,
+                lambda: paper_edit._read_regular_bytes(
+                    selected, limit=1, invalid_code="INVENTED"
+                ),
+            ),
+            (
+                "run artifact",
+                run_workflow,
+                lambda: run_workflow._read_regular_bytes(
+                    selected, limit=1, code="INVENTED"
+                ),
+            ),
+            (
+                "run source hash",
+                run_workflow,
+                lambda: run_workflow._hash_regular_path(selected, code="INVENTED"),
+            ),
+            (
+                "story artifact",
+                story_fcpxml,
+                lambda: story_fcpxml._read_regular_bytes(selected, "INVENTED"),
+            ),
+            (
+                "story media hash",
+                story_fcpxml,
+                lambda: story_fcpxml._hash_regular_media(selected),
+            ),
+            (
+                "validator artifact",
+                validate_artifacts,
+                lambda: validate_artifacts._read_regular_bytes(selected),
+            ),
+        )
+
+        for label, module, reader in readers:
+            observed: list[int] = []
+
+            def reject_special(_path, flags, *_args, observed=observed):
+                observed.append(flags)
+                raise OSError("invented special file")
+
+            with self.subTest(label=label), mock.patch.object(
+                module.os, "open", side_effect=reject_special
+            ), self.assertRaises(ValueError):
+                reader()
+            self.assertEqual(len(observed), 1)
+            self.assertTrue(observed[0] & os.O_NONBLOCK, label)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_validator_rejects_fifo_without_waiting_for_a_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fifo = Path(temporary) / "artifact.json"
+            os.mkfifo(fifo)
+            code = (
+                "from pathlib import Path; import sys; "
+                "from tritrack_editing_assistant.validate_artifacts "
+                "import validate_contract_artifact; "
+                "\ntry: validate_contract_artifact(Path(sys.argv[1]))"
+                "\nexcept ValueError as error: print(error); raise SystemExit(0)"
+                "\nraise SystemExit(1)"
+            )
+            completed = subprocess.run(
+                [os.fspath(Path(os.sys.executable)), "-c", code, os.fspath(fifo)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, "TRITRACK_VALIDATE_INPUT_UNREADABLE\n")
+        self.assertEqual(completed.stderr, "")
 
 
 class ContractValidationTest(unittest.TestCase):

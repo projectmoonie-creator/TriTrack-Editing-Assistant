@@ -214,7 +214,7 @@ def encode_manifest(payload: object) -> bytes:
 
 
 def _read_regular_bytes(path: Path, *, limit: int, code: str) -> bytes:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -493,7 +493,7 @@ def publish_bundle(
 
 
 def _hash_regular_path(path: Path, *, code: str) -> str:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:

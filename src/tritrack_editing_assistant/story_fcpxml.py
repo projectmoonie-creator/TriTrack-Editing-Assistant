@@ -630,7 +630,7 @@ def render_story_fcpxml(
 
 
 def _read_regular_bytes(path: Path, invalid_code: str) -> bytes:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -686,7 +686,7 @@ def _verify_artifact(artifact: _LoadedArtifact) -> None:
 
 
 def _hash_regular_media(path: Path) -> str:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:

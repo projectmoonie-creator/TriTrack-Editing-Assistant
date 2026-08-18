@@ -244,7 +244,7 @@ def _run_git(source: Path, *arguments: str) -> bytes:
 
 
 def _read_regular(path: Path, limit: int) -> bytes:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -578,7 +578,7 @@ def inventory_tracked_source(source: Path) -> SourceInventory:
 
 def _read_archive_bytes(path: Path, policy: Mapping[str, object]) -> bytes:
     limit = _positive_limit(policy, "archiveMaxBytes")
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -1167,7 +1167,7 @@ def _publication_artifacts(manifest: bytes) -> dict[str, tuple[int, str]]:
 
 def _verify_published_archive(path: Path, expected: tuple[int, str]) -> None:
     expected_size, expected_sha256 = expected
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:

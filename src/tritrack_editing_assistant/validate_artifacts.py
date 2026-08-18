@@ -25,7 +25,7 @@ class LoadedValidationArtifact:
 
 
 def _read_regular_bytes(path: Path) -> bytes:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
