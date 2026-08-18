@@ -182,7 +182,7 @@ class DownstreamSeamTest(unittest.TestCase):
                 "calls = int(counter.read_text() or '0') "
                 "if counter.exists() else 0\n"
                 "counter.write_text(str(calls + 1))\n"
-                "artifact = pathlib.Path(sys.argv[sys.argv.index(" 
+                "artifact = pathlib.Path(sys.argv[sys.argv.index("
                 "'--artifact') + 1])\n"
                 "digest = hashlib.sha256(artifact.read_bytes()).hexdigest()\n"
                 "print(json.dumps({\n"
