@@ -162,6 +162,15 @@ class DoctorTest(unittest.TestCase):
         "requires the declared local Final Cut and FCPXML DTD environment",
     )
     def test_cli_doctor_emits_the_real_supported_receipt(self) -> None:
+        probe = doctor.SystemProbe()
+        required_tools = ("ffmpeg", "ffprobe", "xmllint")
+        if (
+            probe.final_cut_version is None
+            or not probe.final_cut_dtd_present("1.14")
+            or any(probe.executable_version(name) is None for name in required_tools)
+        ):
+            self.skipTest("declared local Final Cut environment is not installed")
+
         output = io.StringIO()
         with redirect_stdout(output):
             returncode = cli.main(
