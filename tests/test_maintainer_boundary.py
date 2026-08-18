@@ -149,7 +149,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         for token in forbidden:
             self.assertNotIn(token, lowered)
 
-    def test_public_status_records_task_11_and_schedules_task_12(self) -> None:
+    def test_public_status_records_task_12_and_schedules_task_13(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
@@ -163,7 +163,10 @@ class MaintainerBoundaryTest(unittest.TestCase):
         task_11_verification = (ROOT / "docs" / "TASK-11-VERIFICATION.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Tasks 1–11", status)
+        task_12_verification = (ROOT / "docs" / "TASK-12-VERIFICATION.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Tasks 1–12", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
         self.assertLess(status.index("Task 7"), status.index("Task 8"))
@@ -171,6 +174,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertLess(status.index("Task 9"), status.index("Task 10"))
         self.assertLess(status.index("Task 10"), status.index("Task 11"))
         self.assertLess(status.index("Task 11"), status.index("Task 12"))
+        self.assertLess(status.index("Task 12"), status.index("Task 13"))
         self.assertIn("Task 10", roadmap)
         self.assertLess(roadmap.index("Task 10"), roadmap.index("Task 11"))
         for authority in (
@@ -191,6 +195,10 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("Task 11", roadmap)
         self.assertIn("Task 12", status)
         self.assertIn("Task 12", roadmap)
+        self.assertIn("Task 13", status)
+        self.assertIn("Task 13", roadmap)
+        self.assertIn("alphaReviewTarget", task_12_verification)
+        self.assertIn("alphaEvidenceRecord", task_12_verification)
         self.assertIn("ce562e995b63f3f1a29989de3e1ef202da27b5f2", task_11_verification)
         for scope in (
             "contract",

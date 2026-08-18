@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–11 are complete in this public candidate. Task 6 began from exact
+Tasks 1–12 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -143,6 +143,32 @@ Task 11 made no tag, release, package publication, pull request, tester contact,
 artifact upload, signing, attestation, SBOM, Final Cut GUI, DTD, live provider,
 credential, or application-submission claim.
 
+Task 12 `alphaReviewTarget`
+`283ec9f7018a497aa77ad54c53f380a4bc426031` freezes the complete public alpha
+composition under the producer-approved two-layer Git design. Fix-forward
+review added bounded sync-map loading, streaming release-command capture,
+nonblocking regular-file validation across runtime and distributed scripts,
+descriptor-bound transcription／WAV／CLI hashing, bounded Basic Title inputs,
+and a policy-owned fixed package epoch. The final clean target passed 252
+tests, Ruff, compilation, identity, both skill validators, public-content and
+package gates, plus the full release gate with reproducible wheel bytes and
+normalized sdist contents.
+
+Codex's final independent review returned no current finding. Gemini requested,
+observed, and completed `gemini-3.7-flash` and returned no product finding; its
+overbroad inspection-record claims are not used as evidence. Claude's single
+final subscription-only attempt requested the dynamic `opus` capability alias
+and ended `claude-timeout`; observed／completed model, output, and usage remain
+absent. It was not retried, downgraded, substituted, or sent through a paid
+route. The later `alphaEvidenceRecord` contains only package-excluded public
+evidence, verification, this status, and the maintainer-boundary regression;
+its exact identity is supplied by Git rather than self-referenced inside its
+own bytes. Complete evidence is in `docs/TASK-12-VERIFICATION.md`.
+
+Task 12 makes no tag, GitHub Release, package publication, pull request, tester
+contact, signing, attestation, SBOM, Final Cut GUI, DTD, live provider,
+application-submission, production-stability, or Task 13 claim.
+
 A 2026-08-18 Claude coverage audit found eight historical Task 7–11 attempts
 that ended `claude-timeout` after preflight with ambiguous dispatch and no
 usable result. The registered OAuth preflight repair is not the same failure:
@@ -171,8 +197,9 @@ review and adjudication records are in `docs/reviews/tasks-7-11-claude-manual-*`
 
 ## Next action
 
-Task 12 freezes and independently reviews the alpha candidate. Task 11 does
-not authorize or claim tags, releases, package publication, tester contact, or
+Task 13 proves the public engine as the generic authority and defines a
+deliberate downstream integration seam. Task 12 does not authorize or claim
+tags, releases, package publication, tester contact, private integration, or
 application submission.
 
 ## Implemented surface
