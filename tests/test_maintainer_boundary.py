@@ -105,6 +105,11 @@ class MaintainerBoundaryTest(unittest.TestCase):
             "tritrack run align --help",
             "tritrack run finish --help",
             "tritrack run status --help",
+            "tritrack validate --help",
+            "tritrack validate contract --help",
+            "tritrack validate fcpxml --help",
+            "tritrack validate paper --help",
+            "tritrack validate run --help",
         ):
             self.assertIn(command, end_user)
         for required in (
@@ -117,6 +122,9 @@ class MaintainerBoundaryTest(unittest.TestCase):
             "absent output directory",
             "Keep media",
             "strict aligned transcript",
+            "structural-profile",
+            "authority-bound",
+            "complete-run-bundle",
         ):
             self.assertIn(required, end_user)
 

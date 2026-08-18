@@ -6,12 +6,73 @@ or another project's tool state.
 
 ## Python
 
-- Supported runtime: Python 3.12 or newer.
+- Supported runtime: Python 3.12 and 3.13.
 - Full tests: `python -m unittest discover -s tests -v`
-- Lint: `ruff check src tests`
+- Lint: `ruff check src tests examples scripts`
 - Skill validation uses the current Codex `skill-creator` validator against
   both `.agents/skills/tritrack-editing-assistant-maintainer` and
   `skills/tritrack-editing-assistant`.
+
+## Read-only artifact validation
+
+The installed help authorities are:
+
+```text
+tritrack validate --help
+tritrack validate contract --help
+tritrack validate fcpxml --help
+tritrack validate paper --help
+tritrack validate run --help
+```
+
+- `contract` reports `validationScope: contract` and proves only that one exact
+  JSON artifact satisfies its installed registered schema.
+- `fcpxml` reports `validationScope: structural-profile` and proves only the
+  installed profile and title-binding structural checks. It does not probe
+  source media, validate against a DTD, or launch a Final Cut GUI.
+- `paper` reports `validationScope: authority-bound` and proves that the
+  workbook is acceptable against the exact supplied aligned transcript bytes.
+- `run` reports `validationScope: complete-run-bundle` and proves the complete
+  immutable artifact set, manifest chain, contracts, and hashes agree.
+
+All four modes are read-only. The command does not repair an artifact, guess a
+format, discover sibling inputs, write a result, use network access, or broaden
+success beyond its exact scope.
+
+## Maintainer release-readiness gate
+
+The only maintainer entry point is:
+
+```text
+python scripts/release_gate.py --source . --output ABSENT_DIRECTORY
+```
+
+The source must be one clean Git toplevel at `HEAD`. The output parent must
+exist and the named output directory must be absent; an existing path or race
+winner is preserved. The gate inventories every stage-zero tracked regular
+file, rejects private-path／credential shapes and forbidden binary surfaces,
+builds twice from separately verified `git archive` snapshots, and inspects
+wheel／sdist metadata, paths, types, bounds, exact members, contents, and hashes
+without generic extraction.
+
+The gate requires byte-identical wheels. For sdists it requires identical
+normalized member／content inventories while recording the chosen compressed
+archive's exact SHA-256; it does not claim byte-identical gzip output. A new
+external virtual environment installs only the selected local wheel, runs
+`pip check`, confirms the eleven-component registry, and exercises all five
+validator help authorities.
+
+Publication hard-links the two archives first and canonical
+`release-manifest.json` last. The closed manifest contains only project
+name／version／commit, tracked-source count and digest, exact toolchain and
+platform facts, artifact sizes／hashes／member counts／inventory hashes, passed
+gate names, reproducibility facts, and explicit non-claims. It contains no
+path, time, account, host, command, log, source content, or matched value.
+
+Public CI uses exactly Ubuntu 24.04 x64 and macOS 26 arm64 with Python 3.12
+and 3.13, plus one Ubuntu 24.04／Python 3.13 quality job and one local candidate
+gate job. CI and the maintainer gate do not tag, publish, upload, sign, attest,
+contact testers, operate a GUI, or submit an application.
 
 ## Local synchronization
 

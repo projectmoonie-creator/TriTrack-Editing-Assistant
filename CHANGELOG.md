@@ -35,6 +35,13 @@ format follows Keep a Changelog, and releases will use semantic versioning.
   reserve exclusion.
 - Separate `tritrack-editing-assistant` end-user skill with installed-help
   discovery and explicit text-revision and paper-edit human gates.
+- Four-mode read-only artifact validation for installed JSON contracts,
+  profile-bound FCPXML, paper-workbook authority, and complete immutable runs,
+  with path-free scope-limited summaries.
+- A maintainer-only clean-source privacy, reproducible package, safe-archive,
+  fresh-wheel-install, and manifest-last local candidate gate.
+- Fixed release-grade CI across Ubuntu 24.04 x64 and macOS 26 arm64 on Python
+  3.12 and 3.13, with commit-pinned official Actions and read-only permissions.
 
 ### Fixed
 

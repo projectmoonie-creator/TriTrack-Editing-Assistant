@@ -102,3 +102,14 @@ owned by the public task. Treat requested implementation as including closeout
 review and fix-forward until ordinary in-scope findings are resolved; stop only
 for a true public-contract gap, unsafe scope expansion, or a separately gated
 action.
+
+For a release-readiness task, run the maintainer-only gate exactly as:
+
+```text
+python scripts/release_gate.py --source . --output ABSENT_DIRECTORY
+```
+
+The source must be a clean public-engine／OSS Git toplevel and the output must
+be absent. Treat only a canonical manifest linked after both inspected archives
+as a complete local candidate. This gate does not grant any outward action
+excluded by the standing authorization above.

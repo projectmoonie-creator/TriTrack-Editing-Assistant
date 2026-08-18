@@ -17,6 +17,11 @@ command surface.
    - `tritrack run align --help`
    - `tritrack run finish --help`
    - `tritrack run status --help`
+   - `tritrack validate --help`
+   - `tritrack validate contract --help`
+   - `tritrack validate fcpxml --help`
+   - `tritrack validate paper --help`
+   - `tritrack validate run --help`
 3. Treat installed help as the command authority. Stop if a required command or
    flag is unavailable; do not guess a replacement.
 
@@ -101,6 +106,24 @@ tritrack run status --help
 Report only the run ID, phase, next action, stage names, logical artifact names,
 and hashes. Do not expose local paths, transcript text, question text, notes, or
 FCPXML content in a status summary.
+
+## Validate an existing artifact without mutation
+
+Choose one explicit mode from installed help. Do not guess a format or search
+nearby paths.
+
+- `contract` returns the exact `contract` scope for one registered JSON
+  contract. It does not prove referenced files or cross-file hashes.
+- `fcpxml` returns `structural-profile` for the selected installed profile and
+  title binding. It does not check source media, a DTD, or a GUI import.
+- `paper` returns `authority-bound` for one workbook checked against the exact
+  supplied aligned transcript bytes. It does not publish editor intent.
+- `run` returns `complete-run-bundle` for one complete immutable bundle and its
+  manifest chain.
+
+All four modes are read-only. Validation does not repair an artifact, create an
+output, inspect unrelated content, or make a network request. Report success
+only inside the returned scope.
 
 ## Stop on strict failures
 

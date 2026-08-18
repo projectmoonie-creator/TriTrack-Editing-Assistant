@@ -6,13 +6,14 @@ intact.
 
 ## Development setup
 
-Use Python 3.12 or newer:
+Use Python 3.12 and 3.13:
 
 ```bash
 python3.13 -m venv venv
-venv/bin/pip install -e '.[dev]'
+venv/bin/python -m pip install --constraint requirements/ci-constraints.txt pip
+venv/bin/python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'
 venv/bin/python -m unittest discover -s tests -v
-venv/bin/ruff check src tests
+venv/bin/ruff check src tests examples scripts
 ```
 
 ## Change discipline
@@ -20,8 +21,8 @@ venv/bin/ruff check src tests
 1. Open a focused issue once the public remote exists.
 2. Add or update a test that fails for the intended reason.
 3. Implement the smallest coherent change.
-4. Run focused tests, the full suite, formatting checks, and the privacy gate
-   available for that development stage.
+4. Run focused tests, the full suite, lint, package／CI contract tests, and the
+   maintainer privacy and local-candidate gates available for that stage.
 5. Explain compatibility and privacy effects in the pull request.
 
 Do not include production media, transcripts, credentials, private paths,

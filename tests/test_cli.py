@@ -1185,5 +1185,67 @@ class ValidateCliTest(unittest.TestCase):
         )
 
 
+class ValidateDocumentationTest(unittest.TestCase):
+    def test_public_docs_name_all_help_authorities_and_scope_boundaries(self) -> None:
+        paths = (
+            ROOT / "README.md",
+            ROOT / "docs" / "TOOLING.md",
+            ROOT / "skills" / "tritrack-editing-assistant" / "SKILL.md",
+        )
+        commands = (
+            "tritrack validate --help",
+            "tritrack validate contract --help",
+            "tritrack validate fcpxml --help",
+            "tritrack validate paper --help",
+            "tritrack validate run --help",
+        )
+        scopes = (
+            "contract",
+            "structural-profile",
+            "authority-bound",
+            "complete-run-bundle",
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                for command in commands:
+                    self.assertIn(command, text)
+                for scope in scopes:
+                    self.assertIn(scope, text)
+                self.assertIn("read-only", text)
+                self.assertIn("does not repair", text)
+                self.assertIn("source media", text)
+                self.assertIn("DTD", text)
+                self.assertIn("GUI", text)
+
+    def test_release_gate_is_maintainer_only_and_python_support_is_exact(self) -> None:
+        release_command = (
+            "python scripts/release_gate.py --source . --output ABSENT_DIRECTORY"
+        )
+        tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
+        maintainer = (
+            ROOT
+            / ".agents"
+            / "skills"
+            / "tritrack-editing-assistant-maintainer"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        end_user = (
+            ROOT / "skills" / "tritrack-editing-assistant" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(release_command, tooling)
+        self.assertIn(release_command, maintainer)
+        for text in (readme, end_user):
+            self.assertNotIn(release_command, text)
+        self.assertNotIn("release", end_user.casefold())
+        self.assertNotIn(".py", end_user.casefold())
+
+        for relative in ("README.md", "docs/TOOLING.md", "CONTRIBUTING.md"):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("Python 3.12 and 3.13", text, relative)
+            self.assertNotIn("Python 3.12 or newer", text, relative)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,9 +19,11 @@ Never attach or paste:
 - absolute home, volume, or production paths;
 - proprietary Motion templates, fonts, Final Cut libraries, or project files.
 
-Use an invented fixture or the future sanitized `doctor` receipt when
-reproduction evidence is needed. Until that sanitizer is implemented, omit
-diagnostic attachments rather than redacting them by hand.
+Use an invented fixture or the sanitized `doctor` receipt when reproduction
+evidence is needed. The maintainer source and archive gates reject private home
+paths, credential assignments, private-key headers, forbidden binary surfaces,
+and unsafe archive structure without echoing the matching content. Omit
+sensitive diagnostic attachments rather than redacting them by hand.
 
 ## Scope
 

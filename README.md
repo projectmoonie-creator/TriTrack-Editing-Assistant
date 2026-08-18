@@ -10,8 +10,9 @@ decisions with the editor.
 > local `transcribe`, deterministic cue-addressed `align`, offline receipt-only
 > `hybrid`, profile-bound deterministic `emit`, strict `paper export`／
 > `paper apply`, deterministic `organize`, and immutable `run prepare`／
-> `align`／`finish`／`status`. `validate` and the optional live transport remain
-> planned and fail closed. There is no public release yet.
+> `align`／`finish`／`status`, plus four-mode read-only `validate`. The optional
+> live transport remains planned and fail closed. There is no public release
+> yet.
 
 ## Target alpha compatibility
 
@@ -23,7 +24,7 @@ profile's automated checks and invented-content Final Cut round trip pass:
 - FCPXML 1.14
 - UHD 3840×2160 at 29.97 NDF
 - Rec. 709 and stereo 48 kHz source audio
-- Python 3.12 or newer
+- Python 3.12 and 3.13
 
 The tool will fail closed outside declared compatibility profiles. It is not
 affiliated with, endorsed by, or sponsored by Apple Inc. Final Cut Pro is a
@@ -268,6 +269,30 @@ The separate installed skill at
 human gates using help-first installed commands. It contains no repository
 maintenance or publication authority.
 
+## Read-only artifact validation
+
+Read installed help before selecting one explicit validation mode:
+
+```text
+tritrack validate --help
+tritrack validate contract --help
+tritrack validate fcpxml --help
+tritrack validate paper --help
+tritrack validate run --help
+```
+
+| Mode | Exact `validationScope` | Success proves | Success does not prove |
+| --- | --- | --- | --- |
+| `contract` | `contract` | One exact JSON artifact satisfies its installed registered schema. | Referenced files, parent artifacts, or cross-file hashes exist or match. |
+| `fcpxml` | `structural-profile` | Exact FCPXML bytes satisfy the explicit installed profile and title binding structural checks. | Source media is available, a DTD passed, or a Final Cut GUI import ran. |
+| `paper` | `authority-bound` | The workbook is acceptable against the exact supplied aligned transcript bytes. | A grouping artifact was created or workbook intent was repaired. |
+| `run` | `complete-run-bundle` | The complete immutable bundle, manifest chain, fixed filenames, contracts, and hashes agree. | Any missing bundle was reconstructed or changed. |
+
+Every mode is read-only and writes no output. It does not repair inputs, guess
+a format, search sibling paths, probe source media, consult a DTD, launch a
+GUI, or make a network request. A passing result is evidence only inside the
+reported scope.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented
@@ -303,8 +328,9 @@ Choose the narrowest entry point that matches your goal:
    text-free working cut.
 8. Use `tritrack run` to carry the exact local artifacts through immutable
    prepared, aligned, and finished bundles with explicit editor approval.
-9. Use `tritrack components --json` to inspect what is implemented before
-   trying later roadmap commands; `validate` still fails closed.
+9. Use one explicit `tritrack validate` mode to check an existing artifact
+   without modifying it, and `tritrack components --json` to inspect the
+   unchanged eleven-component registry.
 
 ## Eleven-component roadmap
 
