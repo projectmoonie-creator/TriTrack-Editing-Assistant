@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from pathlib import Path
@@ -23,13 +24,68 @@ FORBIDDEN_TEXT = (
 )
 STYLE_ATTRIBUTES = ("alignment", "font", "fontColor", "fontFace", "fontSize")
 ALLOWED_DOCTYPE = "<!DOCTYPE fcpxml>"
+MAX_CAPTURE_XML_BYTES = 16 * 1024 * 1024
+MAX_BINDING_BYTES = 1024 * 1024
+
+
+def _read_regular_bytes(path: Path, *, limit: int, code: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError(code) from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not (0 < before.st_size <= limit):
+            raise ValueError(code)
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        encoded = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(encoded) != before.st_size
+            or len(encoded) > limit
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+        ):
+            raise ValueError(code)
+        return encoded
+    except OSError as error:
+        raise ValueError(code) from error
+    finally:
+        os.close(descriptor)
 
 
 def _read_public_xml(path: Path) -> str:
-    data = path.read_bytes()
+    data = _read_regular_bytes(
+        path,
+        limit=MAX_CAPTURE_XML_BYTES,
+        code="TRITRACK_TITLE_BINDING_INVALID_XML",
+    )
     if b"\x00" in data:
         raise ValueError("TRITRACK_TITLE_BINDING_INVALID_XML")
-    text = data.decode("utf-8")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("TRITRACK_TITLE_BINDING_INVALID_XML") from error
     without_allowed_doctype = text.replace(ALLOWED_DOCTYPE, "", 1)
     if (
         "<!DOCTYPE" in without_allowed_doctype
@@ -211,7 +267,16 @@ def write_binding(source: Path, output: Path) -> dict[str, object]:
 
 
 def write_rendered_fcpxml(binding_path: Path, output: Path, text: str) -> None:
-    binding = json.loads(binding_path.read_text(encoding="utf-8"))
+    try:
+        binding = json.loads(
+            _read_regular_bytes(
+                binding_path,
+                limit=MAX_BINDING_BYTES,
+                code="TRITRACK_TITLE_BINDING_INVALID",
+            ).decode("utf-8")
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("TRITRACK_TITLE_BINDING_INVALID") from error
     rendered = render_basic_title_fcpxml(binding, text=text)
     _write_exclusive(output, rendered.encode("utf-8"))
 

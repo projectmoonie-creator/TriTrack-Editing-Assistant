@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,6 +42,45 @@ SAFE_FCPXML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 class TitleBindingTest(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_capture_inputs_reject_fifos_without_waiting_for_a_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fifo = root / "input"
+            os.mkfifo(fifo)
+            cases = (
+                ("--input", os.fspath(fifo)),
+                ("--binding", os.fspath(fifo), "--text", "Invented title"),
+            )
+            for index, arguments in enumerate(cases):
+                with self.subTest(arguments=arguments):
+                    completed = subprocess.run(
+                        [
+                            os.fspath(Path(os.sys.executable)),
+                            os.fspath(SCRIPT),
+                            *arguments,
+                            "--output",
+                            os.fspath(root / f"output-{index}"),
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn("TRITRACK_TITLE_BINDING_", completed.stderr)
+
+    def test_capture_rejects_oversized_xml_before_parsing(self) -> None:
+        capture = load_capture_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "oversized.fcpxml"
+            with source.open("wb") as stream:
+                stream.truncate(16 * 1024 * 1024 + 1)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_TITLE_BINDING_INVALID_XML"
+            ):
+                capture.capture_binding(source)
+
     def test_packaged_compatibility_profile_has_exact_alpha_values(self) -> None:
         profile = doctor.load_profile("uhd-2997-ndf-fcpxml-1.14")
         self.assertEqual(profile["schemaVersion"], "tritrack.compatibility-profile/v1")
