@@ -74,5 +74,14 @@ resumable raw result. Exact historical replay is unsafe because delivery is
 ambiguous and the one-call policy applies. A future Claude review should be a
 new request against a newly frozen current candidate, after a separately
 reviewed shared-wrapper work package provides an auditable longer or resumable
-execution contract. Until then the Claude coverage remains explicitly
-incomplete and contributes no finding or pass claim.
+execution contract.
+
+After this audit, the producer supplied one newly requested interactive Claude
+Code review against later public `main` commit
+`7ae540a1ab46de39b31d826ae99752b325e6e9e1`. It returned `NO FINDINGS` plus four
+optional hardening observations, which the maintainer adjudicated separately.
+That producer-mediated result supplies useful new independent coverage but is
+not a wrapper replay and does not change any recorded timeout or ambiguous
+dispatch into a completed formal attempt. The original wrapper coverage
+therefore remains explicitly incomplete and contributes no finding or pass
+claim of its own.

@@ -664,6 +664,25 @@ class StoryFileBoundaryTest(unittest.TestCase):
             ):
                 self.emit(camera_a, camera_b, paths, root / "compact.fcpxml")
 
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            camera_a, camera_b, paths, _ = self.write_inputs(root)
+            working_cut = json.loads(
+                paths["working"].read_text(encoding="utf-8")
+            )
+            paths["working"].write_text(
+                json.dumps(working_cut, separators=(",", ":")), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_STORY_WORKING_CUT_NONCANONICAL"
+            ):
+                self.emit(
+                    camera_a,
+                    camera_b,
+                    paths,
+                    root / "compact-working-cut.fcpxml",
+                )
+
     def test_late_source_mutation_is_detected_before_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

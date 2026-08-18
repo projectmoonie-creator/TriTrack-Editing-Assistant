@@ -209,8 +209,8 @@ venv/bin/tritrack paper apply \
 
 The resulting `grouping-v1` contains cue addresses and normalized editor text,
 but no transcript text, source hash, or millisecond timing. Compile it into a
-deterministic text-free working cut with timing copied only from the exact
-aligned authority:
+deterministic transcript-text-free working cut with timing copied only from
+the exact aligned authority:
 
 ```bash
 venv/bin/tritrack organize \
@@ -253,7 +253,7 @@ manifest into another absent directory.
 Pause again while the editor changes only the workbook's `Questions` and
 `Selections` tables. The workbook is transport, not authority. `run finish`
 consumes the exact prepared and aligned bundles, edited workbook, and original
-camera sources; it publishes canonical `grouping.json`, text-free
+camera sources; it publishes canonical `grouping.json`, transcript-text-free
 `working-cut.json`, story-ordered `story-cut.fcpxml`, and a finished manifest.
 The story renderer re-derives cue text and timing from strict JSON authorities,
 honors sync offsets and the declared audio master, and excludes reserve ranges.
@@ -325,7 +325,7 @@ Choose the narrowest entry point that matches your goal:
 6. Use `tritrack paper export` then `tritrack paper apply` to author durable
    cue-addressed grouping intent through a non-authoritative workbook.
 7. Use `tritrack organize` to compile that intent into a deterministic
-   text-free working cut.
+   transcript-text-free working cut.
 8. Use `tritrack run` to carry the exact local artifacts through immutable
    prepared, aligned, and finished bundles with explicit editor approval.
 9. Use one explicit `tritrack validate` mode to check an existing artifact

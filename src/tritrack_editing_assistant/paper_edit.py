@@ -446,18 +446,30 @@ def _load_workbook_artifact(path: Path) -> tuple[LoadedArtifact, Workbook]:
                 expanded_size += member.file_size
                 if expanded_size > _WORKBOOK_EXPANDED_LIMIT_BYTES:
                     raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID")
-        workbook = load_workbook(
-            io.BytesIO(encoded),
-            data_only=False,
-            read_only=False,
-            keep_links=True,
-        )
     except ValueError:
         raise
     except (
         OSError,
         KeyError,
         TypeError,
+        zipfile.BadZipFile,
+        InvalidFileException,
+        element_tree.ParseError,
+    ) as error:
+        raise ValueError("TRITRACK_PAPER_WORKBOOK_INVALID") from error
+
+    try:
+        workbook = load_workbook(
+            io.BytesIO(encoded),
+            data_only=False,
+            read_only=False,
+            keep_links=True,
+        )
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
         zipfile.BadZipFile,
         InvalidFileException,
         element_tree.ParseError,

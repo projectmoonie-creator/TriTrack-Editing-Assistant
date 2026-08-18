@@ -225,6 +225,24 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("com.apple.FinalCutApp", tooling)
         self.assertIn("default file association", tooling)
 
+    def test_working_cut_claims_distinguish_transcript_from_editor_text(self) -> None:
+        for path in (
+            ROOT / "README.md",
+            ROOT / "docs" / "TASK-9-VERIFICATION.md",
+        ):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("transcript-text-free", text, str(path))
+            self.assertNotRegex(
+                text,
+                r"(?<!transcript-)text-free\s+(?:working cut|`working-cut)",
+                str(path),
+            )
+
+        organizer = (
+            ROOT / "src" / "tritrack_editing_assistant" / "organizer.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("transcript-text-free working cut", organizer)
+
     def test_authorization_is_a_capability_scoped_standing_grant(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")

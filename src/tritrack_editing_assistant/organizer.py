@@ -315,7 +315,7 @@ def build_working_cut(
     aligned_sha256: str,
     grouping_sha256: str,
 ) -> dict[str, object]:
-    """Compile one strict grouping into a deterministic text-free working cut."""
+    """Compile one grouping into a deterministic transcript-text-free working cut."""
 
     aligned_index = index_aligned_transcript(aligned)
     canonical_grouping = validate_grouping(

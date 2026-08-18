@@ -17,7 +17,7 @@ Task 9 implements three local-only commands:
 - `tritrack paper apply` re-derives the complete cue reference grid and hidden
   manifest before publishing canonical `grouping-v1`; and
 - `tritrack organize` compiles exact aligned and grouping bytes into a
-  deterministic, dual-bound, text-free `working-cut-v1`.
+  deterministic, dual-bound, transcript-text-free `working-cut-v1`.
 
 The commands make no network access, provider request, credential lookup,
 media-processing call, subprocess invocation, FCPXML emission, or Task 10

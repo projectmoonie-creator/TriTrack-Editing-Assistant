@@ -536,6 +536,24 @@ class PaperApplyTest(unittest.TestCase):
             ):
                 paper_edit._load_workbook_artifact(workbook_path)
 
+    def test_maps_openpyxl_value_errors_to_the_stable_workbook_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, workbook_path, _ = self.editable_workbook(root)
+
+            with (
+                mock.patch.object(
+                    paper_edit,
+                    "load_workbook",
+                    side_effect=ValueError("untrusted parser detail"),
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "^TRITRACK_PAPER_WORKBOOK_INVALID$",
+                ),
+            ):
+                paper_edit._load_workbook_artifact(workbook_path)
+
     def test_rejects_partial_rows_bad_placement_and_foreign_spans(self) -> None:
         def reject_selection(row, code: str) -> None:
             with tempfile.TemporaryDirectory() as temporary:
