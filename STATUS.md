@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–12 are complete in this public candidate. Task 6 began from exact
+Tasks 1–13 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -195,12 +195,35 @@ and usage provenance remain self-reported, and the result does not convert any
 earlier wrapper timeout or ambiguous dispatch into formal completion. Public
 review and adjudication records are in `docs/reviews/tasks-7-11-claude-manual-*`.
 
+Task 13 selects Option A: the existing versioned artifacts and installed
+`tritrack validate ... --json` commands are the exclusive supported v1
+downstream seam. Internal Python modules remain implementation details. The
+standard-library `examples/downstream_seam.py` consumer accepts only exact
+aligned-contract／scope／hash facts, derives only take and cue counts,
+revalidates before publication, and writes one downstream-owned `example.*`
+sidecar that is never engine authority.
+
+The implementation proof uses only invented public text. Its focused tests
+cover the successful black-box path, output preservation, unknown-version and
+hash-mismatch rejection, and changed second-validation rejection. Packaging
+keeps the wheel's original 38 members unchanged, adds the proof only to the
+sdist, and exercises it outside the source tree against a fresh wheel-only
+installation. The local release manifest records `downstreamSeam: pass`.
+Design brainstorming completed independently in Codex and through Gemini;
+Claude's single subscription-only attempt timed out and remains incomplete
+without retry, downgrade, substitution, or paid fallback.
+
+Task 13 makes no tag, no package publication, no private integration, no
+GitHub Release, pull request, tester contact, signing, attestation, SBOM,
+Final Cut GUI, DTD, live-provider, application-submission, or
+production-stability claim. Evidence is in `docs/TASK-13-VERIFICATION.md`.
+
 ## Next action
 
-Task 13 proves the public engine as the generic authority and defines a
-deliberate downstream integration seam. Task 12 does not authorize or claim
-tags, releases, package publication, tester contact, private integration, or
-application submission.
+Complete Task 13 closeout review, rerun the clean release gate, fast-forward
+the reviewed candidate to public `main`, and verify the fixed six-job CI run at
+the exact remote SHA. This next action does not authorize a tag, release,
+package publication, private integration, or tester contact.
 
 ## Implemented surface
 
@@ -224,6 +247,8 @@ application submission.
 - separate installed end-user editing skill with two explicit human gates;
 - four-mode read-only artifact validation with scope-limited path-free
   summaries;
+- explicit versioned-artifact／installed-CLI downstream seam with an
+  out-of-tree standard-library proof and named `downstreamSeam` release gate;
 - clean tracked-source privacy, bounded archive inspection, reproducible
   packaging, fresh-wheel installation, and manifest-last local candidate gate;
 - fixed Ubuntu／macOS and Python 3.12／3.13 release-grade public CI;

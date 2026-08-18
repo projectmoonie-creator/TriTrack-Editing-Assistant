@@ -35,13 +35,17 @@ here.
   archive privacy gates, reproducible wheel／sdist package contracts, a
   manifest-last local candidate receipt, and fixed Ubuntu／macOS CI across
   Python 3.12／3.13.
+- Task 12: frozen and independently reviewed public alpha composition with
+  bounded-input and clean-package fix-forward hardening.
+- Task 13: the existing versioned artifacts and installed validators are the
+  exclusive v1 downstream seam; an out-of-tree standard-library consumer and
+  fresh wheel-only `downstreamSeam` gate prove the public engine remains the
+  generic authority without adding a Python API or private integration.
 
 ## Alpha-candidate sequence
 
-- Task 12 freezes and independently reviews the alpha candidate. `STATUS.md`
-  alone records whether this gate is pending or complete.
-- Task 13 proves the public engine as the generic authority and defines a
-  deliberate downstream integration seam after Task 12 is complete.
+Tasks 12 and 13 are complete. `STATUS.md` owns the exact current candidate,
+verification, review, and remote-custody state.
 
 ## Outward-action boundary
 
@@ -51,3 +55,6 @@ follows the standing-authorization model in `AGENTS.md` and the public
 maintainer skill: once a capability is explicitly granted for the same target,
 visibility, scope, and risk, it remains valid until revoked and must not be
 requested again.
+
+Task 13 makes no tag, no package publication, and no private integration
+claim. It also makes no release or production-stability claim.

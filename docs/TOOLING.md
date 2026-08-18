@@ -41,6 +41,35 @@ All four modes are read-only. The command does not repair an artifact, guess a
 format, discover sibling inputs, write a result, use network access, or broaden
 success beyond its exact scope.
 
+## Task 13 downstream seam
+
+Task 13 keeps the process boundary deliberate: versioned artifacts plus the
+installed `tritrack validate ... --json` commands are the exclusive supported
+v1 integration seam. Internal Python modules are not a compatibility surface.
+Use installed help as the flag authority and accept only the exact summary
+schema, validation scope, contract version, and hashes the consumer knows.
+
+The public black-box proof is:
+
+```text
+python -I examples/downstream_seam.py \
+  --tritrack tritrack \
+  --aligned examples/downstream_fixture/aligned-transcript.json \
+  --output ABSENT_SIDECAR.json
+```
+
+`examples/downstream_seam.py` uses only the standard library. It invokes
+`tritrack validate contract --json`, binds the reported hash to the exact
+bytes it reads, accepts only `aligned-transcript-v1`, derives take／cue counts,
+revalidates, and writes one absent `example.*` sidecar. The sidecar is
+downstream-owned and never an engine contract or authority.
+
+The release-readiness gate copies both public example files outside the source
+snapshot and runs them with isolated Python and the installed CLI from a fresh
+wheel-only environment. The closed manifest records `downstreamSeam: pass`.
+The proof adds sdist documentation and examples but adds no wheel runtime
+member, plugin hook, network service, or private integration.
+
 ## Maintainer release-readiness gate
 
 The only maintainer entry point is:
@@ -62,7 +91,7 @@ normalized member／content inventories while recording the chosen compressed
 archive's exact SHA-256; it does not claim byte-identical gzip output. A new
 external virtual environment installs only the selected local wheel, runs
 `pip check`, confirms the eleven-component registry, and exercises all five
-validator help authorities.
+validator help authorities plus the Task 13 out-of-tree consumer.
 
 Publication hard-links the two archives first and canonical
 `release-manifest.json` last. The closed manifest contains only project

@@ -293,6 +293,38 @@ a format, search sibling paths, probe source media, consult a DTD, launch a
 GUI, or make a network request. A passing result is evidence only inside the
 reported scope.
 
+## Supported downstream integration seam
+
+Task 13 makes the existing versioned artifacts and installed
+`tritrack validate ... --json` commands the exclusive supported downstream
+integration seam for v1. Internal Python modules and functions remain
+implementation details, not a compatibility contract. No plugin loader,
+stable Python facade, service, or second engine authority was added.
+
+The standard-library reference consumer demonstrates the boundary with only
+invented public data:
+
+```bash
+python -I examples/downstream_seam.py \
+  --tritrack venv/bin/tritrack \
+  --aligned examples/downstream_fixture/aligned-transcript.json \
+  --output downstream-receipt.json
+```
+
+It accepts only the exact aligned-transcript contract and `contract` scope,
+binds the validator's exact artifact SHA-256 to the bytes it reads, derives
+only take and cue counts, revalidates before publication, and creates one
+absent `example.*` sidecar. That sidecar is downstream-owned and
+non-authoritative: it does not repair, replace, retime, rewrite, or validate
+engine facts.
+
+The maintainer release gate copies the consumer and fixture outside the source
+snapshot and exercises them against a fresh wheel-only installation. A closed
+release manifest records this proof as `downstreamSeam: pass`; the wheel still
+contains only the original runtime members. Task 13 makes no tag, no package
+publication, no private integration, no release, and no production-stability
+claim.
+
 ## One-minute invented quickstart
 
 After the development installation above, exercise the complete implemented

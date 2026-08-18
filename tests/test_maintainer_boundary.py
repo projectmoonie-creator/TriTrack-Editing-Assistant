@@ -149,7 +149,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         for token in forbidden:
             self.assertNotIn(token, lowered)
 
-    def test_public_status_records_task_12_and_schedules_task_13(self) -> None:
+    def test_public_status_records_tasks_1_through_13(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
@@ -166,7 +166,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         task_12_verification = (ROOT / "docs" / "TASK-12-VERIFICATION.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Tasks 1–12", status)
+        self.assertIn("Tasks 1–13", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
         self.assertLess(status.index("Task 7"), status.index("Task 8"))
@@ -210,6 +210,43 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertNotIn("`validate` and `run` remain planned", status)
         self.assertNotIn("`validate` remains planned", status)
         self.assertNotIn("`tritrack run` | planned", readme)
+
+    def test_task_13_documents_generic_authority_and_downstream_seam(
+        self,
+    ) -> None:
+        status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
+        roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+        tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        decision = (ROOT / "docs" / "TASK-13-DECISION.md").read_text(
+            encoding="utf-8"
+        )
+        verification = (ROOT / "docs" / "TASK-13-VERIFICATION.md").read_text(
+            encoding="utf-8"
+        )
+
+        for text in (status, roadmap, tooling, readme, decision, verification):
+            self.assertIn("Task 13", text)
+        self.assertIn("Selected option: A", decision)
+        self.assertIn(
+            "exclusive supported downstream integration seam for v1",
+            decision,
+        )
+        self.assertIn(
+            "Internal Python modules and functions are implementation details",
+            decision,
+        )
+        self.assertIn("never an engine contract", decision)
+        for text in (status, tooling, readme, verification):
+            self.assertIn("downstreamSeam", text)
+            self.assertIn("wheel-only", text)
+        for text in (status, roadmap, readme, verification):
+            normalized = " ".join(text.split())
+            self.assertIn("no tag", normalized)
+            self.assertIn("no package publication", normalized)
+            self.assertIn("no private integration", normalized)
+        self.assertIn("examples/downstream_seam.py", tooling)
+        self.assertIn("tritrack validate contract", tooling)
 
     def test_task_6_5_handoff_is_public_safe_and_bounded(self) -> None:
         handoff = (ROOT / "docs" / "TASK-6.5-HANDOFF.md").read_text(
