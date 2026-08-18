@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
@@ -42,12 +43,31 @@ def load_sync_map(path: str | os.PathLike[str]) -> dict[str, object]:
     """Load one strict sync-map-v1 while preserving decimal spellings."""
 
     source = Path(path)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        raw = source.read_bytes()
+        descriptor = os.open(source, flags)
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as error:
+        raise ValueError("TRITRACK_EMIT_SYNC_MAP_UNREADABLE") from error
+    except OSError as error:
+        raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID") from error
+    try:
+        details = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(details.st_mode)
+            or not 0 < details.st_size <= MAX_SYNC_MAP_BYTES
+        ):
+            raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            raw = stream.read(MAX_SYNC_MAP_BYTES + 1)
+        if len(raw) > MAX_SYNC_MAP_BYTES or b"\x00" in raw:
+            raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID")
     except OSError as error:
         raise ValueError("TRITRACK_EMIT_SYNC_MAP_UNREADABLE") from error
-    if len(raw) > MAX_SYNC_MAP_BYTES or b"\x00" in raw:
-        raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     try:
         payload = json.loads(raw.decode("utf-8"), parse_float=Decimal)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

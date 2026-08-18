@@ -9,11 +9,14 @@ import json
 import os
 import platform
 import re
+import selectors
+import signal
 import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
 import unicodedata
 import zipfile
@@ -31,6 +34,8 @@ _ALLOWED_FAKE_USERS = frozenset({b"editor", b"example", b"fake", b"test"})
 _ALLOWED_FAKE_SECRETS = frozenset(
     {b"example", b"fake", b"placeholder", b"redacted", b"secret", b"test"}
 )
+_READ_CHUNK_BYTES = 64 * 1024
+_TERMINATION_GRACE_SECONDS = 0.2
 
 
 class ReleaseGateError(Exception):
@@ -75,6 +80,14 @@ class ReleaseContext:
     sdist: DistributionInspection
 
 
+@dataclass(frozen=True)
+class _BoundedCommandResult:
+    status: str
+    returncode: int | None
+    stdout: bytes
+    stderr: bytes
+
+
 def _fail(code: str) -> None:
     raise ReleaseGateError(code)
 
@@ -89,24 +102,144 @@ def _safe_environment() -> dict[str, str]:
     }
 
 
-def _run_git(source: Path, *arguments: str) -> bytes:
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.poll() is None:
+                process.terminate()
+    elif process.poll() is None:
+        process.terminate()
+
     try:
-        result = subprocess.run(
-            ["git", *arguments],
-            cwd=source,
-            env=_safe_environment(),
+        process.wait(timeout=_TERMINATION_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.poll() is None:
+                process.kill()
+    elif process.poll() is None:
+        process.kill()
+
+    if process.poll() is None:
+        process.wait()
+
+
+def _close_process_pipes(process: subprocess.Popen[bytes]) -> None:
+    if process.stdout is not None:
+        process.stdout.close()
+    if process.stderr is not None:
+        process.stderr.close()
+
+
+def _run_bounded_subprocess(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    timeout: int,
+    output_limit: int,
+) -> _BoundedCommandResult:
+    """Run one argv-only child while bounding combined retained output."""
+
+    if timeout < 1 or output_limit < 1:
+        return _BoundedCommandResult("invalid", None, b"", b"")
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=dict(env),
             shell=False,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=_COMMAND_TIMEOUT_SECONDS,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        _fail("TRITRACK_RELEASE_GIT_FAILED")
-    if result.returncode != 0:
-        _fail("TRITRACK_RELEASE_GIT_FAILED")
-    if len(result.stdout) > _COMMAND_OUTPUT_LIMIT:
+    except OSError:
+        return _BoundedCommandResult("spawn_error", None, b"", b"")
+
+    deadline = time.monotonic() + timeout
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    captured = 0
+    status = "ok"
+    try:
+        with selectors.DefaultSelector() as selector:
+            assert process.stdout is not None
+            assert process.stderr is not None
+            selector.register(process.stdout, selectors.EVENT_READ, stdout_chunks)
+            selector.register(process.stderr, selectors.EVENT_READ, stderr_chunks)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    status = "timeout"
+                    break
+                for key, _mask in selector.select(timeout=min(remaining, 0.05)):
+                    allowed_read = output_limit - captured + 1
+                    chunk = os.read(
+                        key.fd,
+                        min(_READ_CHUNK_BYTES, max(1, allowed_read)),
+                    )
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    captured += len(chunk)
+                    if captured > output_limit:
+                        status = "output_limit_exceeded"
+                        break
+                    key.data.append(chunk)
+                if status != "ok":
+                    break
+
+        if status == "ok":
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 and process.poll() is None:
+                status = "timeout"
+            else:
+                try:
+                    process.wait(timeout=max(0.0, remaining))
+                except subprocess.TimeoutExpired:
+                    status = "timeout"
+        if status != "ok":
+            _terminate_process_group(process)
+            return _BoundedCommandResult(status, process.returncode, b"", b"")
+        return _BoundedCommandResult(
+            "ok" if process.returncode == 0 else "failed",
+            process.returncode,
+            b"".join(stdout_chunks),
+            b"".join(stderr_chunks),
+        )
+    except OSError:
+        _terminate_process_group(process)
+        return _BoundedCommandResult("capture_error", process.returncode, b"", b"")
+    except BaseException:
+        _terminate_process_group(process)
+        raise
+    finally:
+        _close_process_pipes(process)
+
+
+def _run_git(source: Path, *arguments: str) -> bytes:
+    result = _run_bounded_subprocess(
+        ["git", *arguments],
+        cwd=source,
+        env=_safe_environment(),
+        timeout=_COMMAND_TIMEOUT_SECONDS,
+        output_limit=_COMMAND_OUTPUT_LIMIT,
+    )
+    if result.status == "output_limit_exceeded":
         _fail("TRITRACK_RELEASE_GIT_LIMIT")
+    if result.status != "ok":
+        _fail("TRITRACK_RELEASE_GIT_FAILED")
     return result.stdout
 
 
@@ -668,23 +801,17 @@ def _run_command(
     timeout: int = 300,
     output_limit: int = _COMMAND_OUTPUT_LIMIT,
 ) -> bytes:
-    try:
-        result = subprocess.run(
-            argv,
-            cwd=cwd,
-            env=dict(env),
-            shell=False,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        _fail("TRITRACK_RELEASE_COMMAND_FAILED")
-    if result.returncode != 0:
-        _fail("TRITRACK_RELEASE_COMMAND_FAILED")
-    if len(result.stdout) > output_limit or len(result.stderr) > output_limit:
+    result = _run_bounded_subprocess(
+        argv,
+        cwd=cwd,
+        env=env,
+        timeout=timeout,
+        output_limit=output_limit,
+    )
+    if result.status == "output_limit_exceeded":
         _fail("TRITRACK_RELEASE_COMMAND_LIMIT")
+    if result.status != "ok":
+        _fail("TRITRACK_RELEASE_COMMAND_FAILED")
     return result.stdout
 
 

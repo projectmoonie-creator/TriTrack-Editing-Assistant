@@ -364,6 +364,45 @@ class FcpxmlRenderingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "TRITRACK_EMIT_SYNC_MAP_INVALID"):
                 module.load_sync_map(source)
 
+    def test_sync_map_loader_does_not_use_unbounded_path_read(self) -> None:
+        module = self.module()
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "sync-map.json"
+            source.write_text(
+                json.dumps(sync_payload(), default=float),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                Path,
+                "read_bytes",
+                side_effect=AssertionError("unbounded Path.read_bytes used"),
+            ):
+                loaded = module.load_sync_map(source)
+
+            self.assertEqual(loaded["schemaVersion"], "tritrack.sync-map/v1")
+
+    def test_sync_map_loader_rejects_symlink_and_oversized_file(self) -> None:
+        module = self.module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "sync-map.json"
+            source.write_text(
+                json.dumps(sync_payload(), default=float),
+                encoding="utf-8",
+            )
+            linked = root / "linked.json"
+            linked.symlink_to(source)
+            oversized = root / "oversized.json"
+            with oversized.open("wb") as stream:
+                stream.truncate(module.MAX_SYNC_MAP_BYTES + 1)
+
+            for candidate in (linked, oversized):
+                with self.subTest(candidate=candidate.name), self.assertRaisesRegex(
+                    ValueError, "^TRITRACK_EMIT_SYNC_MAP_INVALID$"
+                ):
+                    module.load_sync_map(candidate)
+
 
 if __name__ == "__main__":
     unittest.main()

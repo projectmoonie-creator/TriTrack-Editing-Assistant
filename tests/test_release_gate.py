@@ -388,6 +388,26 @@ class ArchiveGateTest(unittest.TestCase):
 
 
 class OrchestrationTest(unittest.TestCase):
+    def test_command_output_limit_terminates_before_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command = [
+                os.fspath(Path(os.sys.executable)),
+                "-c",
+                "import os,time; os.write(1,b'x'*65); time.sleep(2)",
+            ]
+            with self.assertRaisesRegex(
+                release_gate_core.ReleaseGateError,
+                "^TRITRACK_RELEASE_COMMAND_LIMIT$",
+            ):
+                release_gate_core._run_command(
+                    command,
+                    cwd=root,
+                    env={"PATH": os.defpath},
+                    timeout=1,
+                    output_limit=64,
+                )
+
     def test_build_uses_fixed_epoch_and_exact_local_toolchain(self) -> None:
         calls: list[tuple[str, ...]] = []
         with tempfile.TemporaryDirectory() as temporary:
