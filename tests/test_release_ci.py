@@ -53,6 +53,13 @@ class ReleaseCiContractTest(unittest.TestCase):
             "validate fcpxml --help",
             "validate paper --help",
             "validate run --help",
+            'downstream_dir="$RUNNER_TEMP/tritrack-downstream-seam"',
+            'cp examples/downstream_seam.py "$downstream_dir/downstream_seam.py"',
+            'cp examples/downstream_fixture/aligned-transcript.json "$downstream_dir/aligned-transcript.json"',
+            '"$smoke_python" -I "$downstream_dir/downstream_seam.py"',
+            '--tritrack "$smoke_cli"',
+            '--aligned "$downstream_dir/aligned-transcript.json"',
+            '--output "$downstream_dir/downstream-receipt.json"',
         )
         for command in required:
             self.assertIn(command, self.workflow)

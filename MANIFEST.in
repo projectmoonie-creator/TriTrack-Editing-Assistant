@@ -10,9 +10,11 @@ include MANIFEST.in
 include .github/workflows/ci.yml
 include docs/ROADMAP.md
 include docs/TASK-11-VERIFICATION.md
+include docs/TASK-13-DECISION.md
+include docs/TASK-13-VERIFICATION.md
 include docs/TOOLING.md
 include docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md
-recursive-include examples *.py
+recursive-include examples *.py *.json
 recursive-include skills/tritrack-editing-assistant *.md *.yaml
 include scripts/capture_basic_title_binding.py
 include scripts/release_gate.py

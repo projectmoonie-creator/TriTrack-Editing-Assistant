@@ -88,10 +88,22 @@ class PackagingPolicyTest(unittest.TestCase):
         self.assertEqual(policy["build"], {"sourceDateEpoch": 1704067200})
         for required in (
             "docs/TASK-11-VERIFICATION.md",
+            "docs/TASK-13-DECISION.md",
+            "docs/TASK-13-VERIFICATION.md",
+            "examples/downstream_fixture/aligned-transcript.json",
+            "examples/downstream_seam.py",
             "scripts/release_gate.py",
             "scripts/release_gate_core.py",
+            "tests/test_downstream_seam.py",
         ):
             self.assertIn(required, policy["sdist"]["expectedMembers"])
+        self.assertEqual(len(policy["wheel"]["expectedMembers"]), 38)
+        self.assertFalse(
+            any(
+                "downstream" in member
+                for member in policy["wheel"]["expectedMembers"]
+            )
+        )
         schema = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator.check_schema(schema)
         sample = {

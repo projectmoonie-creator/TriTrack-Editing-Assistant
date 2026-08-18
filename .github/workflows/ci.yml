@@ -65,6 +65,15 @@ jobs:
           "$smoke_cli" validate fcpxml --help
           "$smoke_cli" validate paper --help
           "$smoke_cli" validate run --help
+          downstream_dir="$RUNNER_TEMP/tritrack-downstream-seam"
+          test ! -e "$downstream_dir"
+          mkdir "$downstream_dir"
+          cp examples/downstream_seam.py "$downstream_dir/downstream_seam.py"
+          cp examples/downstream_fixture/aligned-transcript.json "$downstream_dir/aligned-transcript.json"
+          "$smoke_python" -I "$downstream_dir/downstream_seam.py" \
+            --tritrack "$smoke_cli" \
+            --aligned "$downstream_dir/aligned-transcript.json" \
+            --output "$downstream_dir/downstream-receipt.json"
 
   quality:
     name: Public quality and policy contracts
