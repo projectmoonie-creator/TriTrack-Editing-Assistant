@@ -14,6 +14,8 @@ include docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md
 recursive-include examples *.py
 recursive-include skills/tritrack-editing-assistant *.md *.yaml
 include scripts/capture_basic_title_binding.py
+include scripts/release_gate.py
+include scripts/release_gate_core.py
 recursive-include release *.json
 recursive-include requirements *.txt
 recursive-include src/tritrack_editing_assistant *.py *.json *.mjs

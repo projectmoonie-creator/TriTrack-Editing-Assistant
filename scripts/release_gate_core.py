@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 import re
 import stat
 import subprocess
+import sys
 import tarfile
+import tempfile
+import tomllib
 import unicodedata
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
+from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
+
+import jsonschema
 
 _COMMAND_TIMEOUT_SECONDS = 30
 _COMMAND_OUTPUT_LIMIT = 8 * 1024 * 1024
@@ -49,6 +57,21 @@ class DistributionInspection:
     size_bytes: int
     member_count: int
     member_inventory_sha256: str
+
+
+@dataclass(frozen=True)
+class ReleaseContext:
+    project_name: str
+    version: str
+    commit: str
+    source_inventory: SourceInventory
+    toolchain: Mapping[str, str]
+    python_version: str
+    implementation: str
+    system: str
+    machine: str
+    wheel: DistributionInspection
+    sdist: DistributionInspection
 
 
 def _fail(code: str) -> None:
@@ -541,3 +564,659 @@ def inspect_sdist(
         member_count=len(all_members),
         member_inventory_sha256=inventory.hexdigest(),
     )
+
+
+def _run_command(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    timeout: int = 300,
+    output_limit: int = _COMMAND_OUTPUT_LIMIT,
+) -> bytes:
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=cwd,
+            env=dict(env),
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        _fail("TRITRACK_RELEASE_COMMAND_FAILED")
+    if result.returncode != 0:
+        _fail("TRITRACK_RELEASE_COMMAND_FAILED")
+    if len(result.stdout) > output_limit or len(result.stderr) > output_limit:
+        _fail("TRITRACK_RELEASE_COMMAND_LIMIT")
+    return result.stdout
+
+
+def _installed_tool_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for distribution in ("pip", "build", "setuptools", "wheel"):
+        try:
+            versions[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            _fail("TRITRACK_RELEASE_TOOLCHAIN")
+    return versions
+
+
+def _build_environment(epoch: int, temporary: Path) -> dict[str, str]:
+    if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+        _fail("TRITRACK_RELEASE_EPOCH")
+    environment = {
+        "HOME": os.fspath(temporary),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": os.defpath,
+        "PYTHONHASHSEED": "0",
+        "SOURCE_DATE_EPOCH": str(epoch),
+        "TMPDIR": os.fspath(temporary),
+    }
+    return environment
+
+
+def build_distributions(
+    snapshot: Path, output: Path, *, epoch: int
+) -> tuple[Path, Path]:
+    """Build exactly one wheel and one sdist with the pinned local toolchain."""
+
+    expected_tools = {
+        "pip": "26.2",
+        "build": "1.5.0",
+        "setuptools": "84.0.0",
+        "wheel": "0.48.0",
+    }
+    if _installed_tool_versions() != expected_tools:
+        _fail("TRITRACK_RELEASE_TOOLCHAIN")
+    if not snapshot.is_dir():
+        _fail("TRITRACK_RELEASE_SNAPSHOT")
+    try:
+        os.mkdir(output)
+    except FileExistsError:
+        _fail("TRITRACK_RELEASE_OUTPUT_EXISTS")
+    except OSError:
+        _fail("TRITRACK_RELEASE_OUTPUT")
+    _run_command(
+        [
+            os.fspath(Path(sys.executable)),
+            "-m",
+            "build",
+            "--no-isolation",
+            "--outdir",
+            os.fspath(output),
+        ],
+        cwd=snapshot,
+        env=_build_environment(epoch, output),
+        timeout=300,
+    )
+    try:
+        members = [
+            child
+            for child in output.iterdir()
+            if child.is_file() and not child.is_symlink()
+        ]
+    except OSError:
+        _fail("TRITRACK_RELEASE_BUILD_OUTPUT")
+    wheels = [child for child in members if child.suffix == ".whl"]
+    sdists = [child for child in members if child.name.endswith(".tar.gz")]
+    if len(members) != 2 or len(wheels) != 1 or len(sdists) != 1:
+        _fail("TRITRACK_RELEASE_BUILD_OUTPUT")
+    return wheels[0], sdists[0]
+
+
+def _wheel_project_identity(wheel: Path) -> tuple[str, str]:
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            candidates = [
+                member
+                for member in archive.infolist()
+                if member.filename.endswith(".dist-info/METADATA")
+                and not member.is_dir()
+            ]
+            if len(candidates) != 1 or candidates[0].file_size > _POLICY_LIMIT:
+                _fail("TRITRACK_RELEASE_WHEEL_METADATA")
+            with archive.open(candidates[0]) as stream:
+                encoded = _bounded_archive_read(
+                    stream, candidates[0].file_size, _POLICY_LIMIT
+                )
+    except ReleaseGateError:
+        raise
+    except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
+        _fail("TRITRACK_RELEASE_WHEEL_METADATA")
+    message = BytesParser().parsebytes(encoded)
+    name = message.get("Name")
+    version = message.get("Version")
+    if not name or not version or "\n" in name or "\n" in version:
+        _fail("TRITRACK_RELEASE_WHEEL_METADATA")
+    return name, version
+
+
+def _install_environment(temporary: Path, binary: Path) -> dict[str, str]:
+    environment = {
+        "HOME": os.fspath(temporary),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": os.fspath(binary) + os.pathsep + os.defpath,
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "PIP_NO_INPUT": "1",
+        "PYTHONHASHSEED": "0",
+        "TMPDIR": os.fspath(temporary),
+    }
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "PIP_INDEX_URL",
+        "PIP_TRUSTED_HOST",
+    ):
+        value = os.environ.get(name)
+        if value:
+            environment[name] = value
+    return environment
+
+
+def fresh_install_smoke(wheel: Path, temporary: Path) -> None:
+    """Install only the chosen local wheel into a new external environment."""
+
+    project_name, project_version = _wheel_project_identity(wheel)
+    if project_name != "tritrack-editing-assistant":
+        _fail("TRITRACK_RELEASE_WHEEL_IDENTITY")
+    try:
+        os.mkdir(temporary)
+    except FileExistsError:
+        _fail("TRITRACK_RELEASE_OUTPUT_EXISTS")
+    except OSError:
+        _fail("TRITRACK_RELEASE_OUTPUT")
+    _run_command(
+        [os.fspath(Path(sys.executable)), "-m", "venv", os.fspath(temporary)],
+        cwd=temporary.parent,
+        env=_build_environment(0, temporary),
+        timeout=180,
+    )
+    if os.name == "nt":
+        binary = temporary / "Scripts"
+        python = binary / "python.exe"
+        tritrack = binary / "tritrack.exe"
+    else:
+        binary = temporary / "bin"
+        python = binary / "python"
+        tritrack = binary / "tritrack"
+    environment = _install_environment(temporary, binary)
+    pip_base = [
+        os.fspath(python),
+        "-m",
+        "pip",
+        "--disable-pip-version-check",
+        "--no-input",
+    ]
+    _run_command(
+        [*pip_base, "install", "pip==26.2"],
+        cwd=temporary,
+        env=environment,
+        timeout=300,
+    )
+    _run_command(
+        [*pip_base, "install", os.fspath(wheel.resolve())],
+        cwd=temporary,
+        env=environment,
+        timeout=600,
+    )
+    _run_command(
+        [*pip_base, "check"], cwd=temporary, env=environment, timeout=120
+    )
+    metadata_code = (
+        "import importlib.metadata as m; "
+        "d=m.distribution('tritrack-editing-assistant'); "
+        "print(d.metadata['Name']+'\\t'+d.version)"
+    )
+    installed = _run_command(
+        [os.fspath(python), "-I", "-c", metadata_code],
+        cwd=temporary,
+        env=environment,
+        timeout=60,
+    )
+    expected = f"{project_name}\t{project_version}\n".encode()
+    if installed != expected:
+        _fail("TRITRACK_RELEASE_INSTALLED_IDENTITY")
+    components = _run_command(
+        [os.fspath(tritrack), "components", "--json"],
+        cwd=temporary,
+        env=environment,
+        timeout=60,
+    )
+    try:
+        component_summary = json.loads(components.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("TRITRACK_RELEASE_INSTALLED_SMOKE")
+    if (
+        not isinstance(component_summary, Mapping)
+        or component_summary.get("schemaVersion") != "tritrack.components/v1"
+        or not isinstance(component_summary.get("components"), list)
+        or len(component_summary["components"]) != 11
+    ):
+        _fail("TRITRACK_RELEASE_INSTALLED_SMOKE")
+    for arguments in (
+        ("validate", "--help"),
+        ("validate", "contract", "--help"),
+        ("validate", "fcpxml", "--help"),
+        ("validate", "paper", "--help"),
+        ("validate", "run", "--help"),
+    ):
+        _run_command(
+            [os.fspath(tritrack), *arguments],
+            cwd=temporary,
+            env=environment,
+            timeout=60,
+        )
+
+
+def build_release_manifest(context: ReleaseContext) -> dict[str, object]:
+    """Build and validate the deterministic, closed public release receipt."""
+
+    manifest: dict[str, object] = {
+        "schemaVersion": "tritrack.release-manifest/v1",
+        "project": {
+            "name": context.project_name,
+            "version": context.version,
+            "commit": context.commit,
+        },
+        "sourceInventory": {
+            "count": context.source_inventory.count,
+            "sha256": context.source_inventory.sha256,
+        },
+        "toolchain": {
+            "python": context.python_version,
+            "implementation": context.implementation,
+            "pip": context.toolchain["pip"],
+            "build": context.toolchain["build"],
+            "setuptools": context.toolchain["setuptools"],
+            "wheel": context.toolchain["wheel"],
+        },
+        "platform": {"system": context.system, "machine": context.machine},
+        "artifacts": {
+            "wheel": {
+                "sha256": context.wheel.sha256,
+                "sizeBytes": context.wheel.size_bytes,
+                "memberCount": context.wheel.member_count,
+                "memberInventorySha256": context.wheel.member_inventory_sha256,
+            },
+            "sdist": {
+                "sha256": context.sdist.sha256,
+                "sizeBytes": context.sdist.size_bytes,
+                "memberCount": context.sdist.member_count,
+                "memberInventorySha256": context.sdist.member_inventory_sha256,
+            },
+        },
+        "reproducibility": {
+            "wheelBytesMatch": True,
+            "sdistMembersMatch": True,
+        },
+        "gates": {
+            "sourceIdentity": "pass",
+            "sourcePrivacy": "pass",
+            "wheelArchive": "pass",
+            "sdistArchive": "pass",
+            "freshInstall": "pass",
+        },
+        "nonClaims": [
+            "no-tag",
+            "no-release",
+            "no-package-publication",
+            "no-pull-request",
+            "no-tester-contact",
+            "no-signing",
+            "no-attestation",
+            "no-sbom",
+            "no-final-cut-gui",
+            "no-dtd",
+            "no-provider",
+            "no-application-submission",
+        ],
+    }
+    schema_path = Path(__file__).resolve().parents[1] / "release" / "release-manifest-v1.schema.json"
+    try:
+        schema = json.loads(_read_regular(schema_path, _POLICY_LIMIT).decode("utf-8"))
+        jsonschema.Draft202012Validator.check_schema(schema)
+        jsonschema.validate(manifest, schema)
+    except ReleaseGateError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, jsonschema.ValidationError, jsonschema.SchemaError):
+        _fail("TRITRACK_RELEASE_MANIFEST_INVALID")
+    return manifest
+
+
+def _link_file(source: Path, destination: Path) -> None:
+    try:
+        os.link(source, destination, follow_symlinks=False)
+    except FileExistsError:
+        _fail("TRITRACK_RELEASE_OUTPUT_EXISTS")
+    except OSError:
+        _fail("TRITRACK_RELEASE_PUBLISH")
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(path, flags)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError:
+        _fail("TRITRACK_RELEASE_PUBLISH")
+
+
+def publish_release(
+    output: Path, wheel: Path, sdist: Path, manifest: bytes
+) -> None:
+    """Publish two archives first and the canonical success manifest last."""
+
+    if (
+        wheel.name in {"", ".", "..", "release-manifest.json"}
+        or sdist.name in {"", ".", "..", "release-manifest.json"}
+        or wheel.name != os.path.basename(wheel.name)
+        or sdist.name != os.path.basename(sdist.name)
+        or wheel.name == sdist.name
+    ):
+        _fail("TRITRACK_RELEASE_PUBLISH")
+    try:
+        parent_details = output.parent.stat(follow_symlinks=False)
+    except OSError:
+        _fail("TRITRACK_RELEASE_OUTPUT")
+    if not stat.S_ISDIR(parent_details.st_mode):
+        _fail("TRITRACK_RELEASE_OUTPUT")
+
+    temporary_manifest: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=wheel.parent,
+            prefix=".release-manifest-",
+            delete=False,
+        ) as stream:
+            temporary_manifest = Path(stream.name)
+            stream.write(manifest)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.mkdir(output)
+        except FileExistsError:
+            _fail("TRITRACK_RELEASE_OUTPUT_EXISTS")
+        except OSError:
+            _fail("TRITRACK_RELEASE_OUTPUT")
+        _link_file(wheel, output / wheel.name)
+        _link_file(sdist, output / sdist.name)
+        _fsync_directory(output)
+        _link_file(temporary_manifest, output / "release-manifest.json")
+        _fsync_directory(output)
+        _fsync_directory(output.parent)
+    finally:
+        if temporary_manifest is not None:
+            try:
+                temporary_manifest.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _assert_source_identity(source: Path) -> tuple[str, str]:
+    encoded = _read_regular(source / ".tritrack-project.json", _POLICY_LIMIT)
+    try:
+        identity = json.loads(encoded.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("TRITRACK_RELEASE_SOURCE_IDENTITY")
+    expected = {
+        "schemaVersion": "tritrack.project-identity/v1",
+        "projectId": "tritrack-editing-assistant",
+        "projectKind": "public-engine",
+        "maintainerSkill": "tritrack-editing-assistant-maintainer",
+        "lane": "OSS",
+    }
+    if identity != expected:
+        _fail("TRITRACK_RELEASE_SOURCE_IDENTITY")
+
+    try:
+        configuration = tomllib.loads(
+            _read_regular(source / "pyproject.toml", _POLICY_LIMIT).decode("utf-8")
+        )
+        project = configuration["project"]
+        project_name = project["name"]
+        version = project["version"]
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError, TypeError):
+        _fail("TRITRACK_RELEASE_PROJECT_METADATA")
+    if project_name != "tritrack-editing-assistant" or not isinstance(version, str):
+        _fail("TRITRACK_RELEASE_PROJECT_METADATA")
+    init_bytes = _read_regular(
+        source / "src" / "tritrack_editing_assistant" / "__init__.py",
+        _POLICY_LIMIT,
+    )
+    match = re.fullmatch(
+        rb'"""TriTrack Editing Assistant public package\."""\n\n__version__ = "([^"\r\n]+)"\n',
+        init_bytes,
+    )
+    if match is None or match.group(1).decode("utf-8", "strict") != version:
+        _fail("TRITRACK_RELEASE_PROJECT_METADATA")
+    return project_name, version
+
+
+def _assert_git_toplevel(source: Path) -> None:
+    try:
+        top = Path(
+            _run_git(source, "rev-parse", "--show-toplevel").decode("utf-8", "strict").strip()
+        ).resolve()
+    except (UnicodeDecodeError, OSError):
+        _fail("TRITRACK_RELEASE_GIT_FAILED")
+    if top != source:
+        _fail("TRITRACK_RELEASE_GIT_TOPLEVEL")
+
+
+def _snapshot_inventory(
+    archive: tarfile.TarFile,
+    max_file: int,
+    max_total: int,
+) -> tuple[list[tuple[str, int, bytes]], str]:
+    files: list[tuple[str, int, bytes]] = []
+    seen: set[str] = set()
+    total = 0
+    for member in archive.getmembers():
+        name = _safe_member_name(member.name)
+        if name in seen:
+            _fail("TRITRACK_RELEASE_SNAPSHOT")
+        seen.add(name)
+        if member.isdir():
+            continue
+        if not member.isreg():
+            _fail("TRITRACK_RELEASE_SNAPSHOT")
+        if member.size > max_file:
+            _fail("TRITRACK_RELEASE_SOURCE_LIMIT")
+        total += member.size
+        if total > max_total:
+            _fail("TRITRACK_RELEASE_SOURCE_LIMIT")
+        stream = archive.extractfile(member)
+        if stream is None:
+            _fail("TRITRACK_RELEASE_SNAPSHOT")
+        with stream:
+            encoded = _bounded_archive_read(stream, member.size, max_file)
+        mode = 0o755 if member.mode & 0o111 else 0o644
+        files.append((name, mode, encoded))
+    inventory = hashlib.sha256()
+    for name, mode, encoded in sorted(files):
+        content_sha = hashlib.sha256(encoded).hexdigest()
+        for value in (name, f"100{mode:o}"[-6:], str(len(encoded)), content_sha):
+            inventory.update(value.encode("utf-8"))
+            inventory.update(b"\0")
+        inventory.update(b"\n")
+    return files, inventory.hexdigest()
+
+
+def _write_snapshot_file(root: Path, name: str, mode: int, encoded: bytes) -> None:
+    path = root.joinpath(*PurePosixPath(name).parts)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            mode,
+        )
+        try:
+            view = memoryview(encoded)
+            while view:
+                written = os.write(descriptor, view)
+                if written < 1:
+                    _fail("TRITRACK_RELEASE_SNAPSHOT")
+                view = view[written:]
+        finally:
+            os.close(descriptor)
+        os.chmod(path, mode, follow_symlinks=False)
+    except ReleaseGateError:
+        raise
+    except OSError:
+        _fail("TRITRACK_RELEASE_SNAPSHOT")
+
+
+def _materialize_snapshot(
+    source: Path,
+    destination: Path,
+    inventory: SourceInventory,
+    policy: Mapping[str, object],
+) -> None:
+    try:
+        os.mkdir(destination)
+    except OSError:
+        _fail("TRITRACK_RELEASE_SNAPSHOT")
+    archive_path = destination.parent / f".{destination.name}.tar"
+    _run_command(
+        [
+            "git",
+            "archive",
+            "--format=tar",
+            "--output",
+            os.fspath(archive_path),
+            inventory.commit,
+        ],
+        cwd=source,
+        env=_safe_environment(),
+        timeout=120,
+    )
+    try:
+        with tarfile.open(archive_path, mode="r:") as archive:
+            files, digest = _snapshot_inventory(
+                archive,
+                _positive_limit(policy, "sourceMaxFileBytes"),
+                _positive_limit(policy, "sourceMaxTotalBytes"),
+            )
+        if len(files) != inventory.count or digest != inventory.sha256:
+            _fail("TRITRACK_RELEASE_SNAPSHOT_MISMATCH")
+        for name, mode, encoded in files:
+            _write_snapshot_file(destination, name, mode, encoded)
+    except ReleaseGateError:
+        raise
+    except (OSError, tarfile.TarError):
+        _fail("TRITRACK_RELEASE_SNAPSHOT")
+    finally:
+        try:
+            archive_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _canonical_manifest(manifest: Mapping[str, object]) -> bytes:
+    return (
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+def run_release_gate(source: Path, output: Path) -> dict[str, object]:
+    """Run the complete local release-readiness gate and publish manifest last."""
+
+    try:
+        source = source.resolve(strict=True)
+    except OSError:
+        _fail("TRITRACK_RELEASE_SOURCE")
+    if not source.is_dir():
+        _fail("TRITRACK_RELEASE_SOURCE")
+    _assert_git_toplevel(source)
+    project_name, version = _assert_source_identity(source)
+    inventory = inventory_tracked_source(source)
+    policy = _load_policy(source)
+    if output.exists() or output.is_symlink():
+        _fail("TRITRACK_RELEASE_OUTPUT_EXISTS")
+    try:
+        output_parent = output.parent.resolve(strict=True)
+    except OSError:
+        _fail("TRITRACK_RELEASE_OUTPUT")
+    output = output_parent / output.name
+    epoch_bytes = _run_git(source, "show", "-s", "--format=%ct", inventory.commit).strip()
+    try:
+        epoch = int(epoch_bytes.decode("ascii", "strict"))
+    except (UnicodeDecodeError, ValueError):
+        _fail("TRITRACK_RELEASE_EPOCH")
+    if _run_git(source, "rev-parse", "HEAD").strip().decode("ascii") != inventory.commit:
+        _fail("TRITRACK_RELEASE_SOURCE_CHANGED")
+
+    with tempfile.TemporaryDirectory(
+        dir=output.parent, prefix=".tritrack-release-staging-"
+    ) as temporary:
+        staging = Path(temporary)
+        snapshot_one = staging / "snapshot-one"
+        snapshot_two = staging / "snapshot-two"
+        _materialize_snapshot(source, snapshot_one, inventory, policy)
+        _materialize_snapshot(source, snapshot_two, inventory, policy)
+        wheel_one, sdist_one = build_distributions(
+            snapshot_one, staging / "dist-one", epoch=epoch
+        )
+        wheel_two, sdist_two = build_distributions(
+            snapshot_two, staging / "dist-two", epoch=epoch
+        )
+        identities = {
+            _wheel_project_identity(wheel_one),
+            _wheel_project_identity(wheel_two),
+        }
+        if identities != {(project_name, version)}:
+            _fail("TRITRACK_RELEASE_WHEEL_IDENTITY")
+        if wheel_one.name != wheel_two.name or sdist_one.name != sdist_two.name:
+            _fail("TRITRACK_RELEASE_BUILD_OUTPUT")
+        if wheel_one.read_bytes() != wheel_two.read_bytes():
+            _fail("TRITRACK_RELEASE_WHEEL_REPRODUCIBILITY")
+        wheel_inspection = inspect_wheel(wheel_one, policy)
+        second_wheel_inspection = inspect_wheel(wheel_two, policy)
+        sdist_inspection = inspect_sdist(sdist_one, policy)
+        second_sdist_inspection = inspect_sdist(sdist_two, policy)
+        if wheel_inspection != second_wheel_inspection:
+            _fail("TRITRACK_RELEASE_WHEEL_REPRODUCIBILITY")
+        if (
+            sdist_inspection.member_inventory_sha256
+            != second_sdist_inspection.member_inventory_sha256
+        ):
+            _fail("TRITRACK_RELEASE_SDIST_REPRODUCIBILITY")
+        fresh_install_smoke(wheel_one, staging / "fresh-install")
+        context = ReleaseContext(
+            project_name=project_name,
+            version=version,
+            commit=inventory.commit,
+            source_inventory=inventory,
+            toolchain=_installed_tool_versions(),
+            python_version=platform.python_version(),
+            implementation=platform.python_implementation(),
+            system=platform.system(),
+            machine=platform.machine(),
+            wheel=wheel_inspection,
+            sdist=sdist_inspection,
+        )
+        manifest = build_release_manifest(context)
+        publish_release(
+            output,
+            wheel_one,
+            sdist_one,
+            _canonical_manifest(manifest),
+        )
+    return manifest

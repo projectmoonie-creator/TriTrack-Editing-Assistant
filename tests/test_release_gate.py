@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import importlib
 import io
 import json
 import os
@@ -323,6 +325,292 @@ class ArchiveGateTest(unittest.TestCase):
                 first.member_inventory_sha256,
                 second.member_inventory_sha256,
             )
+
+
+class OrchestrationTest(unittest.TestCase):
+    def test_build_uses_fixed_epoch_and_exact_local_toolchain(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = root / "snapshot"
+            snapshot.mkdir()
+            output = root / "dist"
+
+            def fake_command(argv, **_kwargs):
+                calls.append(tuple(str(value) for value in argv))
+                output.mkdir(exist_ok=True)
+                (output / "demo-1.0-py3-none-any.whl").write_bytes(b"wheel")
+                (output / "demo-1.0.tar.gz").write_bytes(b"sdist")
+                return b""
+
+            with (
+                mock.patch.object(
+                    release_gate_core,
+                    "_installed_tool_versions",
+                    return_value={
+                        "pip": "26.2",
+                        "build": "1.5.0",
+                        "setuptools": "84.0.0",
+                        "wheel": "0.48.0",
+                    },
+                ),
+                mock.patch.object(
+                    release_gate_core, "_run_command", side_effect=fake_command
+                ),
+            ):
+                wheel, sdist = release_gate_core.build_distributions(
+                    snapshot, output, epoch=1704067200
+                )
+
+        self.assertEqual(wheel.name, "demo-1.0-py3-none-any.whl")
+        self.assertEqual(sdist.name, "demo-1.0.tar.gz")
+        self.assertEqual(
+            calls,
+            [
+                (
+                    os.fspath(Path(os.sys.executable)),
+                    "-m",
+                    "build",
+                    "--no-isolation",
+                    "--outdir",
+                    os.fspath(output),
+                )
+            ],
+        )
+
+    def test_fresh_install_uses_only_local_wheel_and_smokes_all_help(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "tritrack_editing_assistant-0.1.0a0-py3-none-any.whl"
+            wheel.write_bytes(b"invented wheel")
+
+            def fake_command(argv, **_kwargs):
+                normalized = tuple(str(value) for value in argv)
+                calls.append(normalized)
+                if normalized[-2:] == ("components", "--json"):
+                    return json.dumps(
+                        {
+                            "schemaVersion": "tritrack.components/v1",
+                            "components": [{}] * 11,
+                        }
+                    ).encode()
+                if "importlib.metadata" in " ".join(normalized):
+                    return b"tritrack-editing-assistant\t0.1.0a0\n"
+                return b""
+
+            with (
+                mock.patch.object(
+                    release_gate_core,
+                    "_wheel_project_identity",
+                    return_value=("tritrack-editing-assistant", "0.1.0a0"),
+                ),
+                mock.patch.object(
+                    release_gate_core, "_run_command", side_effect=fake_command
+                ),
+            ):
+                release_gate_core.fresh_install_smoke(wheel, root / "smoke")
+
+        flattened = [" ".join(call) for call in calls]
+        install = [
+            call
+            for call in flattened
+            if "pip" in call.split() and "install" in call.split()
+        ]
+        self.assertTrue(any("pip==26.2" in call for call in install))
+        self.assertTrue(any(os.fspath(wheel) in call for call in install))
+        self.assertFalse(any("-e" in call.split() for call in install))
+        for mode in ("contract", "fcpxml", "paper", "run"):
+            self.assertTrue(
+                any(f"validate {mode} --help" in call for call in flattened), mode
+            )
+
+    def test_manifest_is_closed_deterministic_and_schema_valid(self) -> None:
+        inspection = release_gate_core.DistributionInspection(
+            sha256="c" * 64,
+            size_bytes=10,
+            member_count=2,
+            member_inventory_sha256="d" * 64,
+        )
+        context = release_gate_core.ReleaseContext(
+            project_name="tritrack-editing-assistant",
+            version="0.1.0a0",
+            commit="a" * 40,
+            source_inventory=release_gate_core.SourceInventory(
+                count=3,
+                total_bytes=30,
+                sha256="b" * 64,
+                commit="a" * 40,
+            ),
+            toolchain={
+                "pip": "26.2",
+                "build": "1.5.0",
+                "setuptools": "84.0.0",
+                "wheel": "0.48.0",
+            },
+            python_version="3.13.15",
+            implementation="CPython",
+            system="Darwin",
+            machine="arm64",
+            wheel=inspection,
+            sdist=inspection,
+        )
+        first = release_gate_core.build_release_manifest(context)
+        second = release_gate_core.build_release_manifest(context)
+        self.assertEqual(first, second)
+        self.assertEqual(
+            set(first),
+            {
+                "schemaVersion",
+                "project",
+                "sourceInventory",
+                "toolchain",
+                "platform",
+                "artifacts",
+                "reproducibility",
+                "gates",
+                "nonClaims",
+            },
+        )
+        serialized = json.dumps(first, sort_keys=True)
+        for forbidden in ("path", "time", "duration", "command", "log", "content"):
+            self.assertNotIn(forbidden, serialized.casefold())
+
+    def test_pipeline_failure_never_calls_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                mock.patch.object(
+                    release_gate_core,
+                    "inventory_tracked_source",
+                    side_effect=release_gate_core.ReleaseGateError(
+                        "TRITRACK_RELEASE_SOURCE_DIRTY"
+                    ),
+                ),
+                mock.patch.object(release_gate_core, "publish_release") as publish,
+                self.assertRaises(release_gate_core.ReleaseGateError),
+            ):
+                release_gate_core.run_release_gate(root, root / "absent")
+            publish.assert_not_called()
+
+
+class PublicationTest(unittest.TestCase):
+    def test_artifacts_are_linked_before_manifest_and_existing_output_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "demo.whl"
+            sdist = root / "demo.tar.gz"
+            wheel.write_bytes(b"wheel")
+            sdist.write_bytes(b"sdist")
+            output = root / "candidate"
+            release_gate_core.publish_release(output, wheel, sdist, b"{}\n")
+            self.assertEqual((output / wheel.name).read_bytes(), b"wheel")
+            self.assertEqual((output / sdist.name).read_bytes(), b"sdist")
+            self.assertEqual((output / "release-manifest.json").read_bytes(), b"{}\n")
+
+            sentinel = root / "existing"
+            sentinel.mkdir()
+            (sentinel / "keep").write_text("untouched", encoding="utf-8")
+            with self.assertRaisesRegex(
+                release_gate_core.ReleaseGateError,
+                "^TRITRACK_RELEASE_OUTPUT_EXISTS$",
+            ):
+                release_gate_core.publish_release(sentinel, wheel, sdist, b"{}\n")
+            self.assertEqual((sentinel / "keep").read_text(), "untouched")
+
+    def test_interruption_before_last_link_leaves_no_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "demo.whl"
+            sdist = root / "demo.tar.gz"
+            wheel.write_bytes(b"wheel")
+            sdist.write_bytes(b"sdist")
+            output = root / "candidate"
+            real_link = os.link
+            calls = 0
+
+            def interrupted(source: Path, destination: Path) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 3:
+                    raise release_gate_core.ReleaseGateError(
+                        "TRITRACK_RELEASE_INTERRUPTED"
+                    )
+                real_link(source, destination)
+
+            with (
+                mock.patch.object(
+                    release_gate_core, "_link_file", side_effect=interrupted
+                ),
+                self.assertRaises(release_gate_core.ReleaseGateError),
+            ):
+                release_gate_core.publish_release(output, wheel, sdist, b"{}\n")
+            self.assertTrue(output.is_dir())
+            self.assertFalse((output / "release-manifest.json").exists())
+
+
+class ReleaseCliTest(unittest.TestCase):
+    def test_cli_success_prints_only_bounded_receipt_facts(self) -> None:
+        release_gate = importlib.import_module("scripts.release_gate")
+        manifest = {
+            "project": {"commit": "a" * 40, "version": "0.1.0a0"},
+            "artifacts": {
+                "wheel": {"sha256": "b" * 64},
+                "sdist": {"sha256": "c" * 64},
+            },
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(
+                release_gate.release_gate_core,
+                "run_release_gate",
+                return_value=manifest,
+            ),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            result = release_gate.main(
+                ["--source", "invented-source", "--output", "invented-output"]
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        lines = stdout.getvalue().splitlines()
+        self.assertEqual(lines[0], "RELEASE_GATE\tPASS")
+        self.assertEqual(len(lines), 6)
+        self.assertFalse(any("invented" in line for line in lines))
+
+    def test_cli_usage_and_gate_failures_are_json_codes_only(self) -> None:
+        release_gate = importlib.import_module("scripts.release_gate")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result = release_gate.main([])
+        self.assertEqual(result, 64)
+        self.assertEqual(
+            json.loads(stderr.getvalue()), {"error": "TRITRACK_RELEASE_USAGE"}
+        )
+
+        stderr = io.StringIO()
+        private = "/" + "Users" + "/real-person/private"
+        with (
+            mock.patch.object(
+                release_gate.release_gate_core,
+                "run_release_gate",
+                side_effect=release_gate_core.ReleaseGateError(
+                    "TRITRACK_RELEASE_PRIVATE_PATH"
+                ),
+            ),
+            contextlib.redirect_stderr(stderr),
+        ):
+            result = release_gate.main(
+                ["--source", private, "--output", "invented-output"]
+            )
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            json.loads(stderr.getvalue()),
+            {"error": "TRITRACK_RELEASE_PRIVATE_PATH"},
+        )
+        self.assertNotIn(private, stderr.getvalue())
 
 
 if __name__ == "__main__":

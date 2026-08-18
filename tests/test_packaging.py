@@ -83,6 +83,11 @@ class PackagingPolicyTest(unittest.TestCase):
             set(policy),
             {"schemaVersion", "limits", "source", "wheel", "sdist"},
         )
+        for required in (
+            "scripts/release_gate.py",
+            "scripts/release_gate_core.py",
+        ):
+            self.assertIn(required, policy["sdist"]["expectedMembers"])
         schema = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator.check_schema(schema)
         sample = {
