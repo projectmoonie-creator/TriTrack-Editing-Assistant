@@ -143,6 +143,18 @@ Task 11 made no tag, release, package publication, pull request, tester contact,
 artifact upload, signing, attestation, SBOM, Final Cut GUI, DTD, live provider,
 credential, or application-submission claim.
 
+A 2026-08-18 Claude coverage audit found eight historical Task 7–11 attempts
+that ended `claude-timeout` after preflight with ambiguous dispatch and no
+usable result. The registered OAuth preflight repair is not the same failure:
+a separate Task 9 design review completed through that repaired subscription
+lane. One new concise recovery review against current public `main` was sent
+once through the approved wrapper and also ended at its hard timeout, with no
+observed／completed model or raw result. It was not retried, downgraded, or sent
+through a paid／alternate route. The public inventory, comparison, packet, and
+attempt ledger are preserved in
+`docs/reviews/claude-incomplete-audit-2026-08-18.md` and the matching
+`tasks-7-11-claude-recovery-*` records.
+
 ## Next action
 
 Task 12 freezes and independently reviews the alpha candidate. Task 11 does
