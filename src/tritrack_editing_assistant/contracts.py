@@ -71,7 +71,8 @@ def contract_name_for_schema_version(schema_version: object) -> str:
     """Resolve only an exact version declared by one installed contract."""
 
     if not isinstance(schema_version, str):
-        raise ValueError("TRITRACK_CONTRACT_UNKNOWN")
+        # One stable data-error family covers absent, non-string, and unknown IDs.
+        raise ValueError("TRITRACK_CONTRACT_UNKNOWN")  # noqa: TRY004
     try:
         return contract_names_by_schema_version()[schema_version]
     except KeyError as error:
