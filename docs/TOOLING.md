@@ -7,6 +7,8 @@ or another project's tool state.
 ## Python
 
 - Supported runtime: Python 3.12 and 3.13.
+- Clean gate environments install both `pip` and `setuptools` through the
+  exact `requirements/ci-constraints.txt` pins before installing `.[dev]`.
 - Full tests: `python -m unittest discover -s tests -v`
 - Lint: `ruff check src tests examples scripts`
 - Skill validation uses the current Codex `skill-creator` validator against

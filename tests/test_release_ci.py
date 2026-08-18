@@ -40,7 +40,7 @@ class ReleaseCiContractTest(unittest.TestCase):
 
     def test_matrix_runs_complete_build_and_installed_smoke(self) -> None:
         required = (
-            "python -m pip install --constraint requirements/ci-constraints.txt pip",
+            "python -m pip install --constraint requirements/ci-constraints.txt pip setuptools",
             "python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'",
             "python -m unittest discover -s tests -v",
             "python -m compileall -q src tests examples scripts",

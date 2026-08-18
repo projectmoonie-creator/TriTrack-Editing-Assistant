@@ -10,7 +10,7 @@ Use Python 3.12 and 3.13:
 
 ```bash
 python3.13 -m venv venv
-venv/bin/python -m pip install --constraint requirements/ci-constraints.txt pip
+venv/bin/python -m pip install --constraint requirements/ci-constraints.txt pip setuptools
 venv/bin/python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'
 venv/bin/python -m unittest discover -s tests -v
 venv/bin/ruff check src tests examples scripts
