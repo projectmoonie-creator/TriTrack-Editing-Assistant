@@ -1,0 +1,23 @@
+{
+  "alignmentProfileId": "cue-addressed-v1",
+  "language": "en",
+  "revisionSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "schemaVersion": "tritrack.aligned-transcript/v1",
+  "sourceBundleSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "takes": [
+    {
+      "cues": [
+        {
+          "cueId": "cue-000001",
+          "disposition": "original",
+          "endMs": 1250,
+          "startMs": 0,
+          "text": "Invented public words."
+        }
+      ],
+      "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "completed",
+      "takeId": "invented-take.wav"
+    }
+  ]
+}
