@@ -289,6 +289,20 @@ def _positive_limit(policy: Mapping[str, object], name: str) -> int:
     return value
 
 
+def _build_epoch(policy: Mapping[str, object]) -> int:
+    build = _mapping(policy.get("build"), "TRITRACK_RELEASE_POLICY_INVALID")
+    if set(build) != {"sourceDateEpoch"}:
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    value = build.get("sourceDateEpoch")
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 315532800
+    ):
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    return value
+
+
 def _string_list(value: object) -> tuple[str, ...]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         _fail("TRITRACK_RELEASE_POLICY_INVALID")
@@ -306,8 +320,16 @@ def _load_policy(source: Path) -> Mapping[str, object]:
     policy = _mapping(policy, "TRITRACK_RELEASE_POLICY_INVALID")
     if policy.get("schemaVersion") != "tritrack.package-policy/v1":
         _fail("TRITRACK_RELEASE_POLICY_INVALID")
-    if set(policy) != {"schemaVersion", "limits", "source", "wheel", "sdist"}:
+    if set(policy) != {
+        "schemaVersion",
+        "build",
+        "limits",
+        "source",
+        "wheel",
+        "sdist",
+    }:
         _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    _build_epoch(policy)
     limits = _mapping(policy.get("limits"), "TRITRACK_RELEASE_POLICY_INVALID")
     expected_limits = {
         "sourceMaxFiles",
@@ -1451,11 +1473,7 @@ def run_release_gate(source: Path, output: Path) -> dict[str, object]:
     except OSError:
         _fail("TRITRACK_RELEASE_OUTPUT")
     output = output_parent / output.name
-    epoch_bytes = _run_git(source, "show", "-s", "--format=%ct", inventory.commit).strip()
-    try:
-        epoch = int(epoch_bytes.decode("ascii", "strict"))
-    except (UnicodeDecodeError, ValueError):
-        _fail("TRITRACK_RELEASE_EPOCH")
+    epoch = _build_epoch(policy)
     if _run_git(source, "rev-parse", "HEAD").strip().decode("ascii") != inventory.commit:
         _fail("TRITRACK_RELEASE_SOURCE_CHANGED")
 

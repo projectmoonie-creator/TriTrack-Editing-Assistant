@@ -1,5 +1,8 @@
 {
   "schemaVersion": "tritrack.package-policy/v1",
+  "build": {
+    "sourceDateEpoch": 1704067200
+  },
   "limits": {
     "sourceMaxFiles": 4096,
     "sourceMaxFileBytes": 2097152,

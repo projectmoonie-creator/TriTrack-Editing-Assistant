@@ -24,6 +24,7 @@ from scripts import release_gate_core
 def _policy(*, wheel: list[str] | None = None, sdist: list[str] | None = None):
     return {
         "schemaVersion": "tritrack.package-policy/v1",
+        "build": {"sourceDateEpoch": 1704067200},
         "limits": {
             "sourceMaxFiles": 32,
             "sourceMaxFileBytes": 4096,
@@ -102,6 +103,17 @@ def _tar(
 
 
 class SourceGateTest(unittest.TestCase):
+    def test_package_policy_owns_a_fixed_build_epoch(self) -> None:
+        self.assertEqual(release_gate_core._build_epoch(_policy()), 1704067200)
+        for invalid in (True, 0, -1, "1704067200"):
+            policy = _policy()
+            policy["build"]["sourceDateEpoch"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                release_gate_core.ReleaseGateError,
+                "^TRITRACK_RELEASE_POLICY_INVALID$",
+            ):
+                release_gate_core._build_epoch(policy)
+
     @unittest.skipUnless(
         hasattr(os, "O_NONBLOCK"), "POSIX nonblocking flag required"
     )

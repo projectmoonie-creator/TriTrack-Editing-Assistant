@@ -83,8 +83,9 @@ class PackagingPolicyTest(unittest.TestCase):
         self.assertEqual(policy["schemaVersion"], "tritrack.package-policy/v1")
         self.assertEqual(
             set(policy),
-            {"schemaVersion", "limits", "source", "wheel", "sdist"},
+            {"schemaVersion", "build", "limits", "source", "wheel", "sdist"},
         )
+        self.assertEqual(policy["build"], {"sourceDateEpoch": 1704067200})
         for required in (
             "docs/TASK-11-VERIFICATION.md",
             "scripts/release_gate.py",
