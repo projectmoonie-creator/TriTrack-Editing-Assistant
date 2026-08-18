@@ -1,6 +1,6 @@
 # Public maintenance status
 
-Updated: 2026-08-17
+Updated: 2026-08-18
 Project kind: public engine
 Lane: `OSS`
 Release state: public pre-release source; no tag, package publication, or
@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–10 are complete in this public candidate. Task 6 began from exact
+Tasks 1–11 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -124,12 +124,30 @@ separate Claude subscription review requested the dynamic `opus` capability
 alias, timed out, and remains explicitly incomplete with observed／completed
 models null and no retry, downgrade, or fallback.
 
+Task 11 implementation candidate
+`ce562e995b63f3f1a29989de3e1ef202da27b5f2` adds the exact four-mode,
+read-only `tritrack validate` surface with `contract`, `structural-profile`,
+`authority-bound`, and `complete-run-bundle` claim scopes. It also adds a
+maintainer-only clean-source privacy and archive-safety gate, two-snapshot
+package reproducibility checks, fresh local-wheel installation smoke, a closed
+manifest-last receipt, exact Python／build constraints, and fixed public CI on
+Ubuntu 24.04 x64 and macOS 26 arm64 across Python 3.12／3.13. The eleven-entry
+component registry is unchanged.
+Local verification in a new Python 3.13 environment passed 69 focused and 235
+complete-suite tests, Ruff, compilation, identity, both skill validators,
+package-member policy, and Git cleanliness. The implementation gate passed
+with byte-identical wheels, identical normalized sdist member inventories,
+and an installed-wheel `pip check` plus five validator help smokes. Sanitized
+evidence and exact hashes are in `docs/TASK-11-VERIFICATION.md`.
+Task 11 made no tag, release, package publication, pull request, tester contact,
+artifact upload, signing, attestation, SBOM, Final Cut GUI, DTD, live provider,
+credential, or application-submission claim.
+
 ## Next action
 
-Task 11 expands the release-grade CI matrix and completes the privacy,
-provenance, packaging, and release gates. Task 10 does not authorize or claim
-tags, releases, package publication, tester contact, or application
-submission.
+Task 12 freezes and independently reviews the alpha candidate. Task 11 does
+not authorize or claim tags, releases, package publication, tester contact, or
+application submission.
 
 ## Implemented surface
 
@@ -151,6 +169,11 @@ submission.
   fixed artifacts, manifest-last publication, and read-only status;
 - deterministic story-ordered FCPXML projection from exact editor authorities;
 - separate installed end-user editing skill with two explicit human gates;
+- four-mode read-only artifact validation with scope-limited path-free
+  summaries;
+- clean tracked-source privacy, bounded archive inspection, reproducible
+  packaging, fresh-wheel installation, and manifest-last local candidate gate;
+- fixed Ubuntu／macOS and Python 3.12／3.13 release-grade public CI;
 - fail-closed `doctor` command;
 - exact UHD 29.97 NDF FCPXML 1.14 compatibility profile;
 - public Basic Title binding with invented-content Final Cut round-trip
@@ -158,9 +181,7 @@ submission.
 - public invented-media synchronization-to-FCPXML quickstart with deterministic
   repeat emission, conditional local DTD verification, and minimal CI.
 
-`validate` remains planned and must return non-success until implemented and
-tested. The network-capable `gemini_transcribe.mjs` component also remains
-planned.
+The network-capable `gemini_transcribe.mjs` component remains planned.
 
 ## Custody
 

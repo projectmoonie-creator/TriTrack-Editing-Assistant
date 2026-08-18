@@ -84,6 +84,7 @@ class PackagingPolicyTest(unittest.TestCase):
             {"schemaVersion", "limits", "source", "wheel", "sdist"},
         )
         for required in (
+            "docs/TASK-11-VERIFICATION.md",
             "scripts/release_gate.py",
             "scripts/release_gate_core.py",
         ):

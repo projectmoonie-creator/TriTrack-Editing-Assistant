@@ -9,6 +9,7 @@ include pyproject.toml
 include MANIFEST.in
 include .github/workflows/ci.yml
 include docs/ROADMAP.md
+include docs/TASK-11-VERIFICATION.md
 include docs/TOOLING.md
 include docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md
 recursive-include examples *.py

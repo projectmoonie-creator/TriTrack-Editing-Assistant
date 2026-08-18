@@ -31,11 +31,13 @@ here.
 - Task 10: installed immutable `run prepare`／`align`／`finish` bundles,
   read-only `run status`, deterministic story-ordered FCPXML, and a separate
   end-user `tritrack-editing-assistant` skill with explicit human gates.
+- Task 11: exact four-mode read-only artifact validation, closed source and
+  archive privacy gates, reproducible wheel／sdist package contracts, a
+  manifest-last local candidate receipt, and fixed Ubuntu／macOS CI across
+  Python 3.12／3.13.
 
 ## Next
 
-- Task 11: expand the release-grade CI matrix and complete the privacy,
-  provenance, packaging, and release gates.
 - Task 12: freeze and independently review the alpha candidate.
 - Task 13: prove the public engine as the generic authority and define a
   deliberate downstream integration seam.

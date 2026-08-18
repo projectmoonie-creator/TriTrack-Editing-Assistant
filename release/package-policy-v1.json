@@ -96,6 +96,7 @@
       "README.md",
       "SECURITY.md",
       "docs/ROADMAP.md",
+      "docs/TASK-11-VERIFICATION.md",
       "docs/TOOLING.md",
       "docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md",
       "examples/quickstart_demo.py",
