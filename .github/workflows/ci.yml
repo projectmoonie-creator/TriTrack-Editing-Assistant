@@ -1,4 +1,4 @@
-name: Public Python CI
+name: Release-grade public Python CI
 
 on:
   push:
@@ -8,24 +8,102 @@ permissions:
   contents: read
 
 jobs:
-  python-contracts:
-    name: Python ${{ matrix.python-version }} contracts (no Final Cut claim)
-    runs-on: ubuntu-latest
+  test-matrix:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        include:
+          - os: ubuntu-24.04
+            python-version: "3.12"
+            architecture: x64
+          - os: ubuntu-24.04
+            python-version: "3.13"
+            architecture: x64
+          - os: macos-26
+            python-version: "3.12"
+            architecture: arm64
+          - os: macos-26
+            python-version: "3.13"
+            architecture: arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up fixed Python cell
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-      - name: Install source and development checks
-        run: python -m pip install -e '.[dev]'
-      - name: Test
+          architecture: ${{ matrix.architecture }}
+      - name: Install constrained source and development checks
+        run: |
+          python -m pip install --constraint requirements/ci-constraints.txt pip
+          python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'
+      - name: Run complete public tests
         run: python -m unittest discover -s tests -v
-      - name: Lint
-        run: ruff check src tests examples
       - name: Compile public Python surfaces
-        run: python -m compileall -q src tests examples
+        run: python -m compileall -q src tests examples scripts
+      - name: Build and smoke the local wheel in a new environment
+        shell: bash
+        run: |
+          wheel_dir="$RUNNER_TEMP/tritrack-wheel-dist"
+          smoke_dir="$RUNNER_TEMP/tritrack-wheel-smoke"
+          test ! -e "$wheel_dir"
+          test ! -e "$smoke_dir"
+          python -m build --wheel --no-isolation --outdir "$wheel_dir"
+          python -m venv "$smoke_dir"
+          smoke_python="$smoke_dir/bin/python"
+          smoke_cli="$smoke_dir/bin/tritrack"
+          "$smoke_python" -m pip install --constraint requirements/ci-constraints.txt pip
+          wheels=("$wheel_dir"/*.whl)
+          test "${#wheels[@]}" -eq 1
+          "$smoke_python" -m pip install "${wheels[0]}"
+          "$smoke_python" -m pip check
+          "$smoke_cli" components --json
+          "$smoke_cli" validate --help
+          "$smoke_cli" validate contract --help
+          "$smoke_cli" validate fcpxml --help
+          "$smoke_cli" validate paper --help
+          "$smoke_cli" validate run --help
+
+  quality:
+    name: Public quality and policy contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          architecture: x64
+      - name: Install constrained source and development checks
+        run: |
+          python -m pip install --constraint requirements/ci-constraints.txt pip
+          python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'
+      - name: Lint every public Python surface
+        run: ruff check src tests examples scripts
+      - name: Verify public role, package, and CI contracts
+        run: python -m unittest tests.test_maintainer_boundary tests.test_packaging tests.test_release_ci -v
+      - name: Verify public project identity
+        run: python .agents/skills/tritrack-editing-assistant-maintainer/scripts/check_project_identity.py --root .
+
+  release-gate:
+    name: Local candidate gate without publication
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          architecture: x64
+      - name: Install exact gate toolchain
+        run: |
+          python -m pip install --constraint requirements/ci-constraints.txt pip
+          python -m pip install --constraint requirements/ci-constraints.txt -e '.[dev]'
+      - name: Run the maintainer release-readiness gate locally
+        run: |
+          mkdir -p .release-evidence
+          python scripts/release_gate.py --source . --output .release-evidence/ci

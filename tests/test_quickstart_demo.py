@@ -138,7 +138,7 @@ class InstalledSurfaceRunner:
 class QuickstartDemoTest(unittest.TestCase):
     def test_documented_one_command_quickstart_entry_point_exists(self) -> None:
         self.assertTrue(EXAMPLE.is_file(), "missing public quickstart entry point")
-        self.assertTrue(WORKFLOW.is_file(), "missing minimal public CI workflow")
+        self.assertTrue(WORKFLOW.is_file(), "missing release-grade public CI workflow")
         command = "venv/bin/python examples/quickstart_demo.py"
         self.assertIn(command, (ROOT / "README.md").read_text(encoding="utf-8"))
 
