@@ -17,6 +17,8 @@ from pathlib import Path
 
 import jsonschema
 
+from scripts import release_gate_core
+
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "release" / "package-policy-v1.json"
 MANIFEST_SCHEMA_PATH = ROOT / "release" / "release-manifest-v1.schema.json"
@@ -223,16 +225,11 @@ class PackagingPolicyTest(unittest.TestCase):
             self.assertEqual(sdist_inventories[0], sdist_inventories[1])
 
     def test_04_historical_records_have_no_machine_specific_home(self) -> None:
-        forbidden = "/" + "Users" + "/hsin-hsinyuan"
         for relative in (
             "docs/reviews/task-10-closeout-packet-2026-08-17.md",
             "docs/superpowers/plans/2026-08-17-task-10-immutable-run.md",
         ):
-            self.assertNotIn(
-                forbidden,
-                (ROOT / relative).read_text(encoding="utf-8"),
-                relative,
-            )
+            release_gate_core.scan_public_bytes((ROOT / relative).read_bytes())
 
 
 if __name__ == "__main__":
