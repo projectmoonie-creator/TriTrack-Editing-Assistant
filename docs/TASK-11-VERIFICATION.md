@@ -143,3 +143,42 @@ application submission. It does not establish independent cross-machine build
 reproducibility or downstream private integration. The evidence proves only
 the tested public source, package, validator, CI contract, and local candidate
 gate described above.
+
+## Independent closeout and fix-forward
+
+The frozen closeout target was
+`d53deb28aa86ef1aba9f978f44456f71bc315e57`; the exact provider packet SHA-256
+was `ab64798a971fdddeb3f093a4c3d0053e9d0d5c71712c81710cc0bb96663a92e2`.
+The tracked public packet is a path-sanitized copy that preserves all target
+bytes and questions while replacing two historical path literals in removed
+diff lines; its SHA-256 is
+`589670cfc3691274d0725d4a13f3fce7f103954e20b22e2188d83c37b9ff92a1`.
+The initial unsanitized record commit was never pushed and is absent from the
+public branch history. Codex completed its source review before either external result
+was read. Gemini requested, observed, and completed `gemini-3.7-flash` and
+returned `NO FINDINGS`. The one Claude subscription attempt requested the
+dynamic `opus` alias and ended `claude-timeout`; observed and completed models
+are null, dispatch completion is ambiguous, and no retry, downgrade, API
+credential, or provider fallback occurred.
+
+Codex reproduced four defects plus one policy-drift defect that was upgraded
+during adjudication. Fix-forward commit
+`0493a92f8257c8721e1a4564b1e43bfec44c01dc` now:
+
+- binds archive bounds, inspection, digesting, and reproducibility comparison
+  to the same regular non-symlink bytes;
+- rechecks hard-linked archive size／digest facts before the manifest-last link;
+- maps a missing run directory to the approved unreadable-input exit class;
+- rejects conservative bare credential-token shapes without exposing values;
+  and
+- closes nested package policy keys and binds declared fake allowlists to the
+  scanner's actual exceptions.
+
+Commit `33b44e30c54db23a1cbff325c7f4a7410980180e` also replaced an old
+username-specific historical-path assertion with the actual generic privacy
+scanner, so the regression checks the rule without embedding a local identity.
+
+The focused GREEN set passed 15 tests, the expanded complete suite passed 238
+tests, Ruff and compilation passed, packaging policy tests passed twice, and
+`git diff --check` passed. Complete classification and RED／GREEN evidence are
+in `docs/reviews/task-11-closeout-adjudication-2026-08-17.md`.
