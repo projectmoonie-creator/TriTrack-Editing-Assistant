@@ -132,6 +132,7 @@ class PackagingPolicyTest(unittest.TestCase):
                     "wheelArchive",
                     "sdistArchive",
                     "freshInstall",
+                    "downstreamSeam",
                 )
             },
             "nonClaims": ["no-tag", "no-package-publication"],

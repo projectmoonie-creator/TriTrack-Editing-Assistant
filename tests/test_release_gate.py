@@ -503,6 +503,22 @@ class OrchestrationTest(unittest.TestCase):
             root = Path(temporary)
             wheel = root / "tritrack_editing_assistant-0.1.0a0-py3-none-any.whl"
             wheel.write_bytes(b"invented wheel")
+            source = root / "source"
+            fixture = source / "examples" / "downstream_fixture" / "aligned-transcript.json"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "tritrack.aligned-transcript/v1",
+                        "takes": [{"cues": [{}]}],
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            script = source / "examples" / "downstream_seam.py"
+            script.write_text("# invented public consumer\n", encoding="utf-8")
 
             def fake_command(argv, **_kwargs):
                 normalized = tuple(str(value) for value in argv)
@@ -516,6 +532,44 @@ class OrchestrationTest(unittest.TestCase):
                     ).encode()
                 if "importlib.metadata" in " ".join(normalized):
                     return b"tritrack-editing-assistant\t0.1.0a0\n"
+                if len(normalized) > 2 and normalized[1] == "-I":
+                    copied_script = Path(normalized[2])
+                    copied_fixture = Path(
+                        normalized[normalized.index("--aligned") + 1]
+                    )
+                    output = Path(normalized[normalized.index("--output") + 1])
+                    self.assertNotIn(source, copied_script.parents)
+                    self.assertNotIn(source, copied_fixture.parents)
+                    self.assertEqual(copied_script.read_bytes(), script.read_bytes())
+                    self.assertEqual(copied_fixture.read_bytes(), fixture.read_bytes())
+                    artifact_sha256 = hashlib.sha256(
+                        copied_fixture.read_bytes()
+                    ).hexdigest()
+                    output.write_text(
+                        json.dumps(
+                            {
+                                "schemaVersion": (
+                                    "example.tritrack-downstream-receipt/v1"
+                                ),
+                                "engineAuthority": {
+                                    "artifactSha256": artifact_sha256,
+                                    "contractName": "aligned-transcript-v1",
+                                    "contractSchemaVersion": (
+                                        "tritrack.aligned-transcript/v1"
+                                    ),
+                                    "validationScope": "contract",
+                                },
+                                "derivedObservation": {
+                                    "takeCount": 1,
+                                    "cueCount": 1,
+                                },
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    return b'{"schemaVersion":"example.tritrack-downstream-summary/v1"}\n'
                 return b""
 
             with (
@@ -528,7 +582,9 @@ class OrchestrationTest(unittest.TestCase):
                     release_gate_core, "_run_command", side_effect=fake_command
                 ),
             ):
-                release_gate_core.fresh_install_smoke(wheel, root / "smoke")
+                release_gate_core.fresh_install_smoke(
+                    wheel, root / "smoke", source
+                )
 
         flattened = [" ".join(call) for call in calls]
         install = [
@@ -543,6 +599,65 @@ class OrchestrationTest(unittest.TestCase):
             self.assertTrue(
                 any(f"validate {mode} --help" in call for call in flattened), mode
             )
+        self.assertTrue(
+            any("-I" in call and "downstream_seam.py" in call for call in flattened)
+        )
+
+    def test_fresh_install_rejects_an_invalid_downstream_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "tritrack_editing_assistant-0.1.0a0-py3-none-any.whl"
+            wheel.write_bytes(b"invented wheel")
+            source = root / "source"
+            fixture = source / "examples" / "downstream_fixture" / "aligned-transcript.json"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_text(
+                '{"schemaVersion":"tritrack.aligned-transcript/v1","takes":[{"cues":[{}]}]}\n',
+                encoding="utf-8",
+            )
+            (source / "examples" / "downstream_seam.py").write_text(
+                "# invented public consumer\n", encoding="utf-8"
+            )
+
+            def fake_command(argv, **_kwargs):
+                normalized = tuple(str(value) for value in argv)
+                if normalized[-2:] == ("components", "--json"):
+                    return json.dumps(
+                        {
+                            "schemaVersion": "tritrack.components/v1",
+                            "components": [{}] * 11,
+                        }
+                    ).encode()
+                if "importlib.metadata" in " ".join(normalized):
+                    return b"tritrack-editing-assistant\t0.1.0a0\n"
+                if len(normalized) > 2 and normalized[1] == "-I":
+                    output = Path(normalized[normalized.index("--output") + 1])
+                    output.write_text(
+                        '{"schemaVersion":"invented.invalid/v1"}\n',
+                        encoding="utf-8",
+                    )
+                return b""
+
+            with (
+                mock.patch.object(
+                    release_gate_core,
+                    "_wheel_project_identity",
+                    return_value=(
+                        "tritrack-editing-assistant",
+                        "0.1.0a0",
+                    ),
+                ),
+                mock.patch.object(
+                    release_gate_core, "_run_command", side_effect=fake_command
+                ),
+                self.assertRaisesRegex(
+                    release_gate_core.ReleaseGateError,
+                    "^TRITRACK_RELEASE_DOWNSTREAM_SEAM$",
+                ),
+            ):
+                release_gate_core.fresh_install_smoke(
+                    wheel, root / "smoke", source
+                )
 
     def test_manifest_is_closed_deterministic_and_schema_valid(self) -> None:
         inspection = release_gate_core.DistributionInspection(
@@ -592,6 +707,17 @@ class OrchestrationTest(unittest.TestCase):
             },
         )
         serialized = json.dumps(first, sort_keys=True)
+        self.assertEqual(
+            first["gates"],
+            {
+                "sourceIdentity": "pass",
+                "sourcePrivacy": "pass",
+                "wheelArchive": "pass",
+                "sdistArchive": "pass",
+                "freshInstall": "pass",
+                "downstreamSeam": "pass",
+            },
+        )
         for forbidden in ("path", "time", "duration", "command", "log", "content"):
             self.assertNotIn(forbidden, serialized.casefold())
 

@@ -962,7 +962,7 @@ def _install_environment(temporary: Path, binary: Path) -> dict[str, str]:
     return environment
 
 
-def fresh_install_smoke(wheel: Path, temporary: Path) -> None:
+def fresh_install_smoke(wheel: Path, temporary: Path, source: Path) -> None:
     """Install only the chosen local wheel into a new external environment."""
 
     project_name, project_version = _wheel_project_identity(wheel)
@@ -1056,6 +1056,74 @@ def fresh_install_smoke(wheel: Path, temporary: Path) -> None:
             timeout=60,
         )
 
+    seam = temporary / "downstream-seam"
+    try:
+        os.mkdir(seam)
+        script_bytes = _read_regular(
+            source / "examples" / "downstream_seam.py", _POLICY_LIMIT
+        )
+        fixture_bytes = _read_regular(
+            source
+            / "examples"
+            / "downstream_fixture"
+            / "aligned-transcript.json",
+            _POLICY_LIMIT,
+        )
+        _write_snapshot_file(seam, "downstream_seam.py", 0o644, script_bytes)
+        _write_snapshot_file(
+            seam, "aligned-transcript.json", 0o644, fixture_bytes
+        )
+    except ReleaseGateError:
+        _fail("TRITRACK_RELEASE_DOWNSTREAM_SEAM")
+    except OSError:
+        _fail("TRITRACK_RELEASE_DOWNSTREAM_SEAM")
+
+    copied_script = seam / "downstream_seam.py"
+    copied_fixture = seam / "aligned-transcript.json"
+    receipt = seam / "downstream-receipt.json"
+    try:
+        _run_command(
+            [
+                os.fspath(python),
+                "-I",
+                os.fspath(copied_script),
+                "--tritrack",
+                os.fspath(tritrack),
+                "--aligned",
+                os.fspath(copied_fixture),
+                "--output",
+                os.fspath(receipt),
+            ],
+            cwd=seam,
+            env=environment,
+            timeout=60,
+        )
+        observed = json.loads(
+            _read_regular(receipt, _POLICY_LIMIT).decode(
+                "utf-8", errors="strict"
+            )
+        )
+    except (
+        ReleaseGateError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        OSError,
+    ):
+        _fail("TRITRACK_RELEASE_DOWNSTREAM_SEAM")
+    artifact_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
+    expected = {
+        "schemaVersion": "example.tritrack-downstream-receipt/v1",
+        "engineAuthority": {
+            "artifactSha256": artifact_sha256,
+            "contractName": "aligned-transcript-v1",
+            "contractSchemaVersion": "tritrack.aligned-transcript/v1",
+            "validationScope": "contract",
+        },
+        "derivedObservation": {"takeCount": 1, "cueCount": 1},
+    }
+    if observed != expected:
+        _fail("TRITRACK_RELEASE_DOWNSTREAM_SEAM")
+
 
 def build_release_manifest(context: ReleaseContext) -> dict[str, object]:
     """Build and validate the deterministic, closed public release receipt."""
@@ -1104,6 +1172,7 @@ def build_release_manifest(context: ReleaseContext) -> dict[str, object]:
             "wheelArchive": "pass",
             "sdistArchive": "pass",
             "freshInstall": "pass",
+            "downstreamSeam": "pass",
         },
         "nonClaims": [
             "no-tag",
@@ -1510,7 +1579,9 @@ def run_release_gate(source: Path, output: Path) -> dict[str, object]:
             != second_sdist_inspection.member_inventory_sha256
         ):
             _fail("TRITRACK_RELEASE_SDIST_REPRODUCIBILITY")
-        fresh_install_smoke(wheel_one, staging / "fresh-install")
+        fresh_install_smoke(
+            wheel_one, staging / "fresh-install", snapshot_one
+        )
         context = ReleaseContext(
             project_name=project_name,
             version=version,

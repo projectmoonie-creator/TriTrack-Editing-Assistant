@@ -93,14 +93,16 @@
         "sourcePrivacy",
         "wheelArchive",
         "sdistArchive",
-        "freshInstall"
+        "freshInstall",
+        "downstreamSeam"
       ],
       "properties": {
         "sourceIdentity": {"const": "pass"},
         "sourcePrivacy": {"const": "pass"},
         "wheelArchive": {"const": "pass"},
         "sdistArchive": {"const": "pass"},
-        "freshInstall": {"const": "pass"}
+        "freshInstall": {"const": "pass"},
+        "downstreamSeam": {"const": "pass"}
       }
     },
     "nonClaims": {
