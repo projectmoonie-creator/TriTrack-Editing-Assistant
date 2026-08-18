@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import io
 import json
 import os
 import platform
@@ -28,7 +29,7 @@ _COMMAND_OUTPUT_LIMIT = 8 * 1024 * 1024
 _POLICY_LIMIT = 1024 * 1024
 _ALLOWED_FAKE_USERS = frozenset({b"editor", b"example", b"fake", b"test"})
 _ALLOWED_FAKE_SECRETS = frozenset(
-    {b"editor", b"example", b"fake", b"placeholder", b"redacted", b"secret", b"test"}
+    {b"example", b"fake", b"placeholder", b"redacted", b"secret", b"test"}
 )
 
 
@@ -174,6 +175,61 @@ def _load_policy(source: Path) -> Mapping[str, object]:
         _fail("TRITRACK_RELEASE_POLICY_INVALID")
     if set(policy) != {"schemaVersion", "limits", "source", "wheel", "sdist"}:
         _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    limits = _mapping(policy.get("limits"), "TRITRACK_RELEASE_POLICY_INVALID")
+    expected_limits = {
+        "sourceMaxFiles",
+        "sourceMaxFileBytes",
+        "sourceMaxTotalBytes",
+        "archiveMaxBytes",
+        "archiveMaxMembers",
+        "memberMaxBytes",
+        "expandedMaxBytes",
+    }
+    if set(limits) != expected_limits:
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    for name in expected_limits:
+        _positive_limit(policy, name)
+
+    source_policy = _mapping(
+        policy.get("source"), "TRITRACK_RELEASE_POLICY_INVALID"
+    )
+    if set(source_policy) != {
+        "allowedFakeHomeUsers",
+        "allowedFakeSecretValues",
+        "forbiddenSuffixes",
+    }:
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    allowed_users = frozenset(
+        value.encode("utf-8")
+        for value in _string_list(source_policy.get("allowedFakeHomeUsers"))
+    )
+    allowed_secrets = frozenset(
+        value.encode("utf-8")
+        for value in _string_list(source_policy.get("allowedFakeSecretValues"))
+    )
+    if (
+        allowed_users != _ALLOWED_FAKE_USERS
+        or allowed_secrets != _ALLOWED_FAKE_SECRETS
+    ):
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    _string_list(source_policy.get("forbiddenSuffixes"))
+
+    wheel_policy = _mapping(
+        policy.get("wheel"), "TRITRACK_RELEASE_POLICY_INVALID"
+    )
+    if set(wheel_policy) != {"expectedMembers"}:
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    _string_list(wheel_policy.get("expectedMembers"))
+
+    sdist_policy = _mapping(
+        policy.get("sdist"), "TRITRACK_RELEASE_POLICY_INVALID"
+    )
+    if set(sdist_policy) != {"root", "expectedMembers"}:
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    root = sdist_policy.get("root")
+    if not isinstance(root, str) or not root.endswith("/"):
+        _fail("TRITRACK_RELEASE_POLICY_INVALID")
+    _string_list(sdist_policy.get("expectedMembers"))
     return policy
 
 
@@ -313,6 +369,15 @@ def scan_public_bytes(encoded: bytes) -> None:
         if value not in _ALLOWED_FAKE_SECRETS:
             _fail("TRITRACK_RELEASE_CREDENTIAL")
 
+    credential_shapes = (
+        rb"\bgh" + rb"[pousr]_[A-Za-z0-9]{36,255}\b",
+        rb"\bAK" + rb"IA[0-9A-Z]{16}\b",
+        rb"\bAI" + rb"za[0-9A-Za-z_-]{35}\b",
+        rb"\bxox" + rb"[baprs]-[0-9A-Za-z-]{20,255}\b",
+    )
+    if any(re.search(pattern, encoded) for pattern in credential_shapes):
+        _fail("TRITRACK_RELEASE_CREDENTIAL")
+
 
 def inventory_tracked_source(source: Path) -> SourceInventory:
     """Bind one clean Git index to the exact regular working-tree bytes."""
@@ -378,16 +443,43 @@ def inventory_tracked_source(source: Path) -> SourceInventory:
     )
 
 
-def _archive_size(path: Path, policy: Mapping[str, object]) -> int:
+def _read_archive_bytes(path: Path, policy: Mapping[str, object]) -> bytes:
+    limit = _positive_limit(policy, "archiveMaxBytes")
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        details = path.stat(follow_symlinks=False)
+        descriptor = os.open(path, flags)
     except OSError:
         _fail("TRITRACK_RELEASE_ARCHIVE_READ")
-    if not stat.S_ISREG(details.st_mode):
-        _fail("TRITRACK_RELEASE_ARCHIVE_TYPE")
-    if details.st_size > _positive_limit(policy, "archiveMaxBytes"):
-        _fail("TRITRACK_RELEASE_ARCHIVE_LIMIT")
-    return details.st_size
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            _fail("TRITRACK_RELEASE_ARCHIVE_TYPE")
+        if not 0 < before.st_size <= limit:
+            _fail("TRITRACK_RELEASE_ARCHIVE_LIMIT")
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        encoded = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(encoded) > limit
+            or len(encoded) != before.st_size
+            or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        ):
+            _fail("TRITRACK_RELEASE_ARCHIVE_CHANGED")
+        return encoded
+    except OSError:
+        _fail("TRITRACK_RELEASE_ARCHIVE_READ")
+    finally:
+        os.close(descriptor)
 
 
 def _safe_member_name(name: str) -> str:
@@ -444,7 +536,8 @@ def inspect_wheel(
 ) -> DistributionInspection:
     """Inspect a wheel without extracting it."""
 
-    size_bytes = _archive_size(path, policy)
+    archive_bytes = _read_archive_bytes(path, policy)
+    size_bytes = len(archive_bytes)
     max_members = _positive_limit(policy, "archiveMaxMembers")
     max_member = _positive_limit(policy, "memberMaxBytes")
     max_expanded = _positive_limit(policy, "expandedMaxBytes")
@@ -455,7 +548,7 @@ def inspect_wheel(
     files: list[tuple[zipfile.ZipInfo, str, int]] = []
     expanded = 0
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             members = archive.infolist()
             if len(members) > max_members:
                 _fail("TRITRACK_RELEASE_ARCHIVE_LIMIT")
@@ -487,7 +580,7 @@ def inspect_wheel(
     except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
         _fail("TRITRACK_RELEASE_ARCHIVE_INVALID")
     return DistributionInspection(
-        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        sha256=hashlib.sha256(archive_bytes).hexdigest(),
         size_bytes=size_bytes,
         member_count=len(files),
         member_inventory_sha256=inventory.hexdigest(),
@@ -499,7 +592,8 @@ def inspect_sdist(
 ) -> DistributionInspection:
     """Inspect a gzipped source distribution without extracting it."""
 
-    size_bytes = _archive_size(path, policy)
+    archive_bytes = _read_archive_bytes(path, policy)
+    size_bytes = len(archive_bytes)
     max_members = _positive_limit(policy, "archiveMaxMembers")
     max_member = _positive_limit(policy, "memberMaxBytes")
     max_expanded = _positive_limit(policy, "expandedMaxBytes")
@@ -514,7 +608,7 @@ def inspect_sdist(
     all_members: list[tuple[tarfile.TarInfo, str, str]] = []
     expanded = 0
     try:
-        with tarfile.open(path, mode="r:gz") as archive:
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
             members = archive.getmembers()
             if len(members) > max_members:
                 _fail("TRITRACK_RELEASE_ARCHIVE_LIMIT")
@@ -559,7 +653,7 @@ def inspect_sdist(
     except (OSError, ValueError, tarfile.TarError):
         _fail("TRITRACK_RELEASE_ARCHIVE_INVALID")
     return DistributionInspection(
-        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        sha256=hashlib.sha256(archive_bytes).hexdigest(),
         size_bytes=size_bytes,
         member_count=len(all_members),
         member_inventory_sha256=inventory.hexdigest(),
@@ -910,6 +1004,78 @@ def _fsync_directory(path: Path) -> None:
         _fail("TRITRACK_RELEASE_PUBLISH")
 
 
+def _publication_artifacts(manifest: bytes) -> dict[str, tuple[int, str]]:
+    if not 0 < len(manifest) <= _POLICY_LIMIT:
+        _fail("TRITRACK_RELEASE_MANIFEST_INVALID")
+    try:
+        payload = _mapping(
+            json.loads(manifest.decode("utf-8", errors="strict")),
+            "TRITRACK_RELEASE_MANIFEST_INVALID",
+        )
+        artifacts = _mapping(
+            payload.get("artifacts"), "TRITRACK_RELEASE_MANIFEST_INVALID"
+        )
+        result: dict[str, tuple[int, str]] = {}
+        for kind in ("wheel", "sdist"):
+            artifact = _mapping(
+                artifacts.get(kind), "TRITRACK_RELEASE_MANIFEST_INVALID"
+            )
+            size = artifact.get("sizeBytes")
+            digest = artifact.get("sha256")
+            if (
+                not isinstance(size, int)
+                or isinstance(size, bool)
+                or size < 1
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                _fail("TRITRACK_RELEASE_MANIFEST_INVALID")
+            result[kind] = (size, digest)
+        return result
+    except ReleaseGateError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("TRITRACK_RELEASE_MANIFEST_INVALID")
+
+
+def _verify_published_archive(path: Path, expected: tuple[int, str]) -> None:
+    expected_size, expected_sha256 = expected
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+        try:
+            details = os.fstat(descriptor)
+            if not stat.S_ISREG(details.st_mode) or details.st_size != expected_size:
+                _fail("TRITRACK_RELEASE_ARCHIVE_CHANGED")
+            digest = hashlib.sha256()
+            observed_size = 0
+            while observed_size <= expected_size:
+                chunk = os.read(
+                    descriptor,
+                    min(1024 * 1024, expected_size + 1 - observed_size),
+                )
+                if not chunk:
+                    break
+                observed_size += len(chunk)
+                digest.update(chunk)
+            after = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+    except ReleaseGateError:
+        raise
+    except OSError:
+        _fail("TRITRACK_RELEASE_ARCHIVE_CHANGED")
+    if (
+        observed_size != expected_size
+        or digest.hexdigest() != expected_sha256
+        or (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns)
+        != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+    ):
+        _fail("TRITRACK_RELEASE_ARCHIVE_CHANGED")
+
+
 def publish_release(
     output: Path, wheel: Path, sdist: Path, manifest: bytes
 ) -> None:
@@ -923,6 +1089,7 @@ def publish_release(
         or wheel.name == sdist.name
     ):
         _fail("TRITRACK_RELEASE_PUBLISH")
+    expected_artifacts = _publication_artifacts(manifest)
     try:
         parent_details = output.parent.stat(follow_symlinks=False)
     except OSError:
@@ -951,6 +1118,8 @@ def publish_release(
         _link_file(wheel, output / wheel.name)
         _link_file(sdist, output / sdist.name)
         _fsync_directory(output)
+        _verify_published_archive(output / wheel.name, expected_artifacts["wheel"])
+        _verify_published_archive(output / sdist.name, expected_artifacts["sdist"])
         _link_file(temporary_manifest, output / "release-manifest.json")
         _fsync_directory(output)
         _fsync_directory(output.parent)
@@ -1185,8 +1354,6 @@ def run_release_gate(source: Path, output: Path) -> dict[str, object]:
             _fail("TRITRACK_RELEASE_WHEEL_IDENTITY")
         if wheel_one.name != wheel_two.name or sdist_one.name != sdist_two.name:
             _fail("TRITRACK_RELEASE_BUILD_OUTPUT")
-        if wheel_one.read_bytes() != wheel_two.read_bytes():
-            _fail("TRITRACK_RELEASE_WHEEL_REPRODUCIBILITY")
         wheel_inspection = inspect_wheel(wheel_one, policy)
         second_wheel_inspection = inspect_wheel(wheel_two, policy)
         sdist_inspection = inspect_sdist(sdist_one, policy)

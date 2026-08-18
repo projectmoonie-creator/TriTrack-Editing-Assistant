@@ -200,8 +200,9 @@ class SourceGateTest(unittest.TestCase):
     def test_privacy_scanner_redacts_paths_and_credentials(self) -> None:
         private_home = b"/" + b"Users" + b"/real-person/project"
         credential = b"API" + b"_KEY=" + b"A" * 36
+        bare_token = b"gh" + b"p_" + b"A" * 36
         private_key = b"-----BEGIN " + b"PRIVATE KEY-----"
-        for encoded in (private_home, credential, private_key):
+        for encoded in (private_home, credential, bare_token, private_key):
             with self.subTest(kind=hashlib.sha256(encoded).hexdigest()[:8]):
                 with self.assertRaises(release_gate_core.ReleaseGateError) as caught:
                     release_gate_core.scan_public_bytes(encoded)
@@ -216,6 +217,37 @@ class SourceGateTest(unittest.TestCase):
             b"secret=test",
         ):
             release_gate_core.scan_public_bytes(public)
+
+    def test_policy_allowlists_and_nested_keys_cannot_drift_from_scanner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            policy_path = root / "release" / "package-policy-v1.json"
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+            policy["source"]["allowedFakeHomeUsers"].append("real-person")
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            _run("git", "add", ".", cwd=root)
+            _run("git", "commit", "-qm", "policy drift", cwd=root)
+            with self.assertRaisesRegex(
+                release_gate_core.ReleaseGateError,
+                "^TRITRACK_RELEASE_POLICY_INVALID$",
+            ):
+                release_gate_core.inventory_tracked_source(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            policy_path = root / "release" / "package-policy-v1.json"
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+            policy["wheel"]["unexpected"] = True
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+            _run("git", "add", ".", cwd=root)
+            _run("git", "commit", "-qm", "policy extension", cwd=root)
+            with self.assertRaisesRegex(
+                release_gate_core.ReleaseGateError,
+                "^TRITRACK_RELEASE_POLICY_INVALID$",
+            ):
+                release_gate_core.inventory_tracked_source(root)
 
 
 class ArchiveGateTest(unittest.TestCase):
@@ -325,6 +357,34 @@ class ArchiveGateTest(unittest.TestCase):
                 first.member_inventory_sha256,
                 second.member_inventory_sha256,
             )
+
+    def test_archive_hash_is_bound_to_the_same_bounded_bytes_as_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "demo.whl"
+            replacement = root / "replacement.whl"
+            _zip(path, [("demo.py", b"public\n")])
+            original = path.read_bytes()
+            replaced = False
+
+            def replace_after_member_read(_encoded: bytes) -> None:
+                nonlocal replaced
+                if replaced:
+                    return
+                replaced = True
+                replacement.write_bytes(b"x" * 70000)
+                os.replace(replacement, path)
+
+            with mock.patch.object(
+                release_gate_core,
+                "scan_public_bytes",
+                side_effect=replace_after_member_read,
+            ):
+                result = release_gate_core.inspect_wheel(path, _policy())
+
+            self.assertTrue(replaced)
+            self.assertEqual(result.size_bytes, len(original))
+            self.assertEqual(result.sha256, hashlib.sha256(original).hexdigest())
 
 
 class OrchestrationTest(unittest.TestCase):
@@ -495,6 +555,28 @@ class OrchestrationTest(unittest.TestCase):
 
 
 class PublicationTest(unittest.TestCase):
+    @staticmethod
+    def manifest(wheel: bytes, sdist: bytes) -> bytes:
+        return (
+            json.dumps(
+                {
+                    "artifacts": {
+                        "wheel": {
+                            "sha256": hashlib.sha256(wheel).hexdigest(),
+                            "sizeBytes": len(wheel),
+                        },
+                        "sdist": {
+                            "sha256": hashlib.sha256(sdist).hexdigest(),
+                            "sizeBytes": len(sdist),
+                        },
+                    }
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n"
+        )
+
     def test_artifacts_are_linked_before_manifest_and_existing_output_wins(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -503,10 +585,11 @@ class PublicationTest(unittest.TestCase):
             wheel.write_bytes(b"wheel")
             sdist.write_bytes(b"sdist")
             output = root / "candidate"
-            release_gate_core.publish_release(output, wheel, sdist, b"{}\n")
+            manifest = self.manifest(b"wheel", b"sdist")
+            release_gate_core.publish_release(output, wheel, sdist, manifest)
             self.assertEqual((output / wheel.name).read_bytes(), b"wheel")
             self.assertEqual((output / sdist.name).read_bytes(), b"sdist")
-            self.assertEqual((output / "release-manifest.json").read_bytes(), b"{}\n")
+            self.assertEqual((output / "release-manifest.json").read_bytes(), manifest)
 
             sentinel = root / "existing"
             sentinel.mkdir()
@@ -515,7 +598,7 @@ class PublicationTest(unittest.TestCase):
                 release_gate_core.ReleaseGateError,
                 "^TRITRACK_RELEASE_OUTPUT_EXISTS$",
             ):
-                release_gate_core.publish_release(sentinel, wheel, sdist, b"{}\n")
+                release_gate_core.publish_release(sentinel, wheel, sdist, manifest)
             self.assertEqual((sentinel / "keep").read_text(), "untouched")
 
     def test_interruption_before_last_link_leaves_no_manifest(self) -> None:
@@ -544,7 +627,50 @@ class PublicationTest(unittest.TestCase):
                 ),
                 self.assertRaises(release_gate_core.ReleaseGateError),
             ):
-                release_gate_core.publish_release(output, wheel, sdist, b"{}\n")
+                release_gate_core.publish_release(
+                    output,
+                    wheel,
+                    sdist,
+                    self.manifest(b"wheel", b"sdist"),
+                )
+            self.assertTrue(output.is_dir())
+            self.assertFalse((output / "release-manifest.json").exists())
+
+    def test_late_archive_change_before_manifest_link_fails_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "demo.whl"
+            sdist = root / "demo.tar.gz"
+            wheel.write_bytes(b"wheel")
+            sdist.write_bytes(b"sdist")
+            output = root / "candidate"
+            real_fsync = release_gate_core._fsync_directory
+            calls = 0
+
+            def mutate_after_archive_links(path: Path) -> None:
+                nonlocal calls
+                calls += 1
+                real_fsync(path)
+                if calls == 1:
+                    wheel.write_bytes(b"changed")
+
+            with (
+                mock.patch.object(
+                    release_gate_core,
+                    "_fsync_directory",
+                    side_effect=mutate_after_archive_links,
+                ),
+                self.assertRaisesRegex(
+                    release_gate_core.ReleaseGateError,
+                    "^TRITRACK_RELEASE_ARCHIVE_CHANGED$",
+                ),
+            ):
+                release_gate_core.publish_release(
+                    output,
+                    wheel,
+                    sdist,
+                    self.manifest(b"wheel", b"sdist"),
+                )
             self.assertTrue(output.is_dir())
             self.assertFalse((output / "release-manifest.json").exists())
 

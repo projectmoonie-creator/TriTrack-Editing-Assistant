@@ -302,6 +302,8 @@ def _bundle_directory(path: Path) -> Path:
     selected = Path(path)
     try:
         metadata = selected.lstat()
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as error:
+        raise ValueError("TRITRACK_RUN_INPUT_UNREADABLE") from error
     except OSError as error:
         raise ValueError("TRITRACK_RUN_BUNDLE_INVALID") from error
     if not stat.S_ISDIR(metadata.st_mode):

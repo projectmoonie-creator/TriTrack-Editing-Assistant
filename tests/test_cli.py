@@ -1146,6 +1146,12 @@ class ValidateCliTest(unittest.TestCase):
                 "--artifact",
                 str(root / "missing.json"),
             )
+            missing_run = self.run_cli_unchecked(
+                "validate",
+                "run",
+                "--run",
+                str(root / "missing-run"),
+            )
             xml = root / "story.fcpxml"
             xml.write_text("invented", encoding="utf-8")
             policy = self.run_cli_unchecked(
@@ -1168,11 +1174,16 @@ class ValidateCliTest(unittest.TestCase):
                 json.loads(missing.stdout),
                 {"error": "TRITRACK_VALIDATE_INPUT_UNREADABLE"},
             )
+            self.assertEqual(missing_run.returncode, 74)
+            self.assertEqual(
+                json.loads(missing_run.stdout),
+                {"error": "TRITRACK_RUN_INPUT_UNREADABLE"},
+            )
             self.assertEqual(policy.returncode, 78)
             self.assertEqual(
                 json.loads(policy.stdout), {"error": "TRITRACK_PROFILE_UNKNOWN"}
             )
-            for completed in (data, missing, policy):
+            for completed in (data, missing, missing_run, policy):
                 self.assertEqual(completed.stderr, "")
                 self.assertNotIn(str(root), completed.stdout)
                 self.assertNotIn("private text", completed.stdout)
