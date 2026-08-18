@@ -60,6 +60,18 @@ Every final local pass also included Ruff, `compileall`, `git diff --check`,
 and public-content scanning of the changed files. The exact final target then
 passed the release gate.
 
+## Package-neutral evidence proof
+
+Committed evidence probe
+`2ff62ca705a2e3ef9188bab1aba526e94425563f` passed the release gate. Against
+`alphaReviewTarget`, wheel SHA-256, wheel member inventory, wheel member count,
+normalized sdist member inventory, sdist member count, and the `src/` Git tree
+were all exactly equal. Its manifest SHA-256 was
+`f339c1fcac8810c75385a07e191ee97e9f0c54834256a9203f5d32a954f664b7`.
+Tracked-source inventory and compressed sdist bytes differed as explicitly
+permitted. The final evidence-only closeout commit must repeat the same clean
+comparison before custody transfer.
+
 ## Review provenance
 
 The initial provider packet SHA-256 was

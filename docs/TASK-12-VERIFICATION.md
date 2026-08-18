@@ -106,8 +106,33 @@ package policy rather than Git commit time.
 
 ## Evidence-only package-neutrality contract
 
-The evidence record is accepted only if a clean post-commit release gate proves
-all of the following against `alphaReviewTarget`:
+Committed evidence probe
+`2ff62ca705a2e3ef9188bab1aba526e94425563f` passed the clean release gate.
+Its release-manifest SHA-256 is
+`f339c1fcac8810c75385a07e191ee97e9f0c54834256a9203f5d32a954f664b7`.
+
+| Required comparison | Review target | Evidence probe | Result |
+| --- | --- | --- | --- |
+| wheel SHA-256 | `ab3a0c0ec66bcfe09a5500034250f4076e5ead1206bf90fa350f2949d9438643` | `ab3a0c0ec66bcfe09a5500034250f4076e5ead1206bf90fa350f2949d9438643` | equal |
+| wheel member inventory | `4bc6644aa0dd1740783b4e26aadfab00a5a26d51233df6b54699a7df0a0f4384` | `4bc6644aa0dd1740783b4e26aadfab00a5a26d51233df6b54699a7df0a0f4384` | equal |
+| wheel member count | 38 | 38 | equal |
+| sdist member inventory | `f428677f07794ee9b10a06da8b2595843eb2af125a3362df3b41548d53d09ded` | `f428677f07794ee9b10a06da8b2595843eb2af125a3362df3b41548d53d09ded` | equal |
+| sdist member count | 103 | 103 | equal |
+| `src/` Git tree | `584e329fe535192a1fc0211d0348b5865a135754` | `584e329fe535192a1fc0211d0348b5865a135754` | equal |
+
+The evidence source inventory honestly changed from 128 files and
+`673717d4ff23e23cfe31fdcccfef35834c093ecb14ca395376e183633da3bf06`
+to 141 files and
+`cf61f10f247544e4ea28eada8685324ba9b83b0cd7a56745137db05673b5a746`.
+The compressed sdist SHA-256 changed from
+`75aba42a7017c7d2ab2b92e397fa94de55d6bec4ed1108ef5ef8a45d1e926b51`
+to
+`53aa3eb05586062541c7fcd937851946e11a154f045437da73ad3898dbd1b8c4`,
+which is permitted and is not misreported as normalized package drift.
+
+The final `alphaEvidenceRecord` adds only this package-excluded closeout text
+to the proven evidence set. It is accepted only if one more clean release gate
+repeats all required equalities against `alphaReviewTarget`:
 
 - exact wheel SHA-256 equality;
 - exact wheel member-inventory SHA-256 equality;
@@ -115,11 +140,10 @@ all of the following against `alphaReviewTarget`:
 - equal sdist member counts; and
 - equal `src/` Git tree identity.
 
-The evidence gate's project commit and tracked-source inventory must differ
-honestly. Compressed sdist SHA-256 may differ and is not a claimed equality.
-The post-commit exact comparison is recorded in this document through a later
-evidence-only closeout update and is rechecked once more at the final clean
-evidence tip.
+The final evidence gate's project commit and tracked-source inventory must
+differ honestly. Compressed sdist SHA-256 may differ and is not a claimed
+equality. The exact final SHA and gate result are reported in the handoff
+without creating a self-referential follow-up commit.
 
 ## Local verification
 
