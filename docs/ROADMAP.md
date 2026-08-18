@@ -36,11 +36,12 @@ here.
   manifest-last local candidate receipt, and fixed Ubuntu／macOS CI across
   Python 3.12／3.13.
 
-## Next
+## Alpha-candidate sequence
 
-- Task 12: freeze and independently review the alpha candidate.
-- Task 13: prove the public engine as the generic authority and define a
-  deliberate downstream integration seam.
+- Task 12 freezes and independently reviews the alpha candidate. `STATUS.md`
+  alone records whether this gate is pending or complete.
+- Task 13 proves the public engine as the generic authority and defines a
+  deliberate downstream integration seam after Task 12 is complete.
 
 ## Outward-action boundary
 
