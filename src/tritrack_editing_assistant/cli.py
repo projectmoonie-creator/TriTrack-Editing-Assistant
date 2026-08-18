@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import stat
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -251,8 +253,7 @@ def _run_transcribe(arguments: argparse.Namespace) -> int:
     if arguments.json:
         takes = payload["takes"]
         assert isinstance(takes, list)
-        with arguments.output.open("rb") as stream:
-            bundle_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        bundle_sha256 = _output_sha256(arguments.output)
         summary = {
             "schemaVersion": "tritrack.transcribe-summary/v1",
             "takeCount": len(takes),
@@ -280,8 +281,7 @@ def _alignment_summary(
             isinstance(cue, dict) and cue["disposition"] == "revised"
             for cue in cues
         )
-    with output_path.open("rb") as stream:
-        artifact_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+    artifact_sha256 = _output_sha256(output_path)
     return {
         "schemaVersion": "tritrack.align-summary/v1",
         "takeCount": len(takes),
@@ -375,8 +375,7 @@ def _run_organize(arguments: argparse.Namespace) -> int:
         assert isinstance(questions, list)
         assert isinstance(segments, list)
         assert isinstance(reserve, list)
-        with arguments.output.open("rb") as stream:
-            artifact_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        artifact_sha256 = _output_sha256(arguments.output)
         print(
             json.dumps(
                 {
@@ -405,8 +404,44 @@ def _paper_error_exit(code: str) -> int:
 
 
 def _output_sha256(output_path: Path) -> str:
-    with output_path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(output_path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("TRITRACK_OUTPUT_UNREADABLE")
+        digest = hashlib.sha256()
+        total = 0
+        remaining = before.st_size + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            digest.update(chunk)
+            total += len(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(descriptor)
+        if (
+            total != before.st_size
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+        ):
+            raise OSError("TRITRACK_OUTPUT_CHANGED")
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
 
 
 def _run_paper_export(arguments: argparse.Namespace) -> int:

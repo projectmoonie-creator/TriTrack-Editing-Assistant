@@ -104,6 +104,23 @@ def write_hybrid_receipt(root: Path, transcript_path: Path) -> Path:
 
 
 class CliSmokeTest(unittest.TestCase):
+    @unittest.skipUnless(
+        hasattr(os, "O_NONBLOCK"), "POSIX nonblocking flag required"
+    )
+    def test_output_hash_rejects_special_files_before_blocking(self) -> None:
+        observed: list[int] = []
+
+        def reject_special(_path, flags, *_args):
+            observed.append(flags)
+            raise OSError("invented special file")
+
+        with mock.patch.object(
+            cli.os, "open", side_effect=reject_special
+        ), self.assertRaises(OSError):
+            cli._output_sha256(Path("invented-special-file"))
+        self.assertEqual(len(observed), 1)
+        self.assertTrue(observed[0] & os.O_NONBLOCK)
+
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         completed = self.run_cli_unchecked(*args)
         completed.check_returncode()

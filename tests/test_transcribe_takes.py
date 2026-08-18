@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tritrack_editing_assistant import contracts, transcribe_takes
 
@@ -223,6 +226,56 @@ class TranscriptCanonicalizationTest(unittest.TestCase):
 
 
 class LocalTranscriptionWorkflowTest(unittest.TestCase):
+    @unittest.skipUnless(
+        hasattr(os, "O_NONBLOCK"), "POSIX nonblocking flag required"
+    )
+    def test_descriptor_input_readers_reject_special_files_before_blocking(self) -> None:
+        selected = Path("invented-special-file")
+        readers = (
+            lambda: transcribe_takes._sha256_file(selected),
+            lambda: transcribe_takes._inspect_normalized_audio(selected),
+            lambda: transcribe_takes._load_engine_json(selected),
+        )
+
+        for reader in readers:
+            observed: list[int] = []
+
+            def reject_special(_path, flags, *_args, observed=observed):
+                observed.append(flags)
+                raise OSError("invented special file")
+
+            with self.subTest(reader=reader), mock.patch.object(
+                transcribe_takes.os, "open", side_effect=reject_special
+            ), self.assertRaises((OSError, ValueError)):
+                reader()
+            self.assertEqual(len(observed), 1)
+            self.assertTrue(observed[0] & os.O_NONBLOCK)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_transcript_hash_rejects_fifo_without_waiting_for_a_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fifo = Path(temporary) / "media.mov"
+            os.mkfifo(fifo)
+            code = (
+                "from pathlib import Path; import sys; "
+                "from tritrack_editing_assistant.transcribe_takes "
+                "import _sha256_file; "
+                "\ntry: _sha256_file(Path(sys.argv[1]))"
+                "\nexcept ValueError as error: print(error); raise SystemExit(0)"
+                "\nraise SystemExit(1)"
+            )
+            completed = subprocess.run(
+                [os.fspath(Path(os.sys.executable)), "-c", code, os.fspath(fifo)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, "TRITRACK_TRANSCRIPT_INPUT_CHANGED\n")
+        self.assertEqual(completed.stderr, "")
+
     def write_executable(self, root: Path, name: str, body: str) -> Path:
         path = root / name
         path.write_text(

@@ -161,12 +161,52 @@ def _require_readable_file(path: Path, code: str) -> Path:
     return path
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(_HASH_CHUNK_BYTES):
+def _sha256_file(
+    path: Path, code: str = "TRITRACK_TRANSCRIPT_INPUT_CHANGED"
+) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError(code) from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(code)
+        digest = hashlib.sha256()
+        total = 0
+        remaining = before.st_size + 1
+        while remaining:
+            chunk = os.read(descriptor, min(_HASH_CHUNK_BYTES, remaining))
+            if not chunk:
+                break
             digest.update(chunk)
-    return digest.hexdigest()
+            total += len(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(descriptor)
+        if (
+            total != before.st_size
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+        ):
+            raise ValueError(code)
+        return digest.hexdigest()
+    except OSError as error:
+        raise ValueError(code) from error
+    finally:
+        os.close(descriptor)
 
 
 def _require_process(result: ProcessResult, code: str) -> None:
@@ -235,22 +275,50 @@ def _normalize_audio(
 
 
 def _inspect_normalized_audio(path: Path) -> tuple[int, bool]:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        with wave.open(str(path), "rb") as audio:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            with wave.open(stream, "rb") as audio:
+                if (
+                    audio.getnchannels() != 1
+                    or audio.getsampwidth() != 2
+                    or audio.getframerate() != 16000
+                    or audio.getnframes() < 1
+                ):
+                    raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID")
+                frame_count = audio.getnframes()
+                silent = True
+                while frames := audio.readframes(64 * 1024):
+                    if any(frames):
+                        silent = False
+            after = os.fstat(stream.fileno())
             if (
-                audio.getnchannels() != 1
-                or audio.getsampwidth() != 2
-                or audio.getframerate() != 16000
-                or audio.getnframes() < 1
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
             ):
                 raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID")
-            frame_count = audio.getnframes()
-            silent = True
-            while frames := audio.readframes(64 * 1024):
-                if any(frames):
-                    silent = False
     except (OSError, EOFError, wave.Error) as error:
         raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     duration_ms = (frame_count * 1000 + 15999) // 16000
     return duration_ms, silent
 
@@ -290,23 +358,53 @@ def _run_whisper(
 
 
 def _load_engine_json(path: Path) -> object:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        metadata = path.lstat()
+        descriptor = os.open(path, flags)
     except OSError as error:
         raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID") from error
-    if (
-        stat.S_ISLNK(metadata.st_mode)
-        or not stat.S_ISREG(metadata.st_mode)
-        or not 0 < metadata.st_size <= _ENGINE_JSON_LIMIT_BYTES
-    ):
-        raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID")
     try:
-        with path.open("rb") as stream:
-            encoded = stream.read(_ENGINE_JSON_LIMIT_BYTES + 1)
-        if len(encoded) > _ENGINE_JSON_LIMIT_BYTES:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not (
+            0 < before.st_size <= _ENGINE_JSON_LIMIT_BYTES
+        ):
             raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID")
+        chunks: list[bytes] = []
+        remaining = _ENGINE_JSON_LIMIT_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(_HASH_CHUNK_BYTES, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        encoded = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(encoded) != before.st_size
+            or len(encoded) > _ENGINE_JSON_LIMIT_BYTES
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+        ):
+            raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID")
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID") from error
+    finally:
+        os.close(descriptor)
+    try:
         return json.loads(encoded.decode("utf-8", errors="strict"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("TRITRACK_TRANSCRIPT_EVIDENCE_INVALID") from error
 
 
@@ -364,8 +462,13 @@ def transcribe_and_publish(
     )
 
     engine_version = _read_engine_version(whisper_executable)
-    model_sha256 = _sha256_file(selected_model)
-    source_hashes = {path: _sha256_file(path) for path in media}
+    model_sha256 = _sha256_file(
+        selected_model, "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE"
+    )
+    source_hashes = {
+        path: _sha256_file(path, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE")
+        for path in media
+    }
     takes: list[TranscribedTake] = []
     with tempfile.TemporaryDirectory(prefix="tritrack-transcribe-") as temporary:
         scratch = Path(temporary)
