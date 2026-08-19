@@ -2,8 +2,8 @@
 
 Verification date: 2026-08-18
 
-Status: coherent implementation is green on an isolated public OSS branch;
-closeout review and exact-SHA integration remain pending.
+Status: closeout review is complete on an isolated public OSS branch;
+final evidence verification and exact-SHA integration remain pending.
 
 ## Approved design
 
@@ -91,12 +91,44 @@ through a paid API.
 
 ## Coherent implementation validation
 
-Before the implementation-target commit, the constrained Python 3.13
-environment passed all 259 tests in 21.894 seconds. Ruff passed every Python
+At exact `task13ReviewTarget`
+`9c9ee9c7c75254c507e9984c27b9a4195273d21c`, the constrained Python 3.13
+environment passed all 259 tests in 22.265 seconds. Ruff passed every Python
 surface under `src`, `tests`, `examples`, and `scripts`; `compileall` passed
 the same four trees; the maintainer identity check returned
 `projectKind: public-engine` and `lane: OSS`; and `git diff --check` passed.
 The focused governance suite passed all 11 tests.
+
+The clean release gate passed at that exact target with:
+
+- wheel SHA-256:
+  `7aeea40d7102bd0eb8b8059100d1d5880d2715662ea26fdb44323ad93cf4f785`;
+- sdist SHA-256:
+  `5f336972fc8ed206a863fafd20b31443322d7552335017f33a2c6949cef88681`;
+- manifest SHA-256:
+  `062c18c6402a40a486221c4d28c6d1f938097a359ea023797dbad95a66d24cd2`;
+  and
+- `downstreamSeam: pass` with 38 wheel members and 109 sdist members.
+
+## Closeout review
+
+The frozen same-byte closeout packet SHA-256 was
+`4a64926fc3a325e61b7962e5c6e3ad13d39a25d5b5716e740be16b6f493c7075`.
+Codex completed independently before provider outputs were read and returned
+`NO FINDINGS`. Gemini requested, observed, and completed
+`gemini-3.7-flash`, returning `NO FINDINGS`; wrapper usage was 80,485 input,
+1,402 output, and 84,283 total tokens.
+
+Claude's single subscription-only closeout attempt ID was
+`cd73c790-5ca5-4801-ab61-9b465d50e546`. It requested the dynamic `opus`
+capability alias and ended `claude-timeout` after preflight with no observed or
+completed model, output, usage, or completion time. It remains incomplete and
+was not retried, downgraded, substituted, or sent through a paid route.
+
+The adjudication accepted both clean reviews and recorded the provider
+observations as non-blocking. No current behavior defect was reproduced, so no
+post-review code change was made. Complete records are in
+`docs/reviews/task-13-closeout-*`.
 
 ## Non-claims
 

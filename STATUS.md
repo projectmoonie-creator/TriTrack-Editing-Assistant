@@ -213,6 +213,18 @@ Design brainstorming completed independently in Codex and through Gemini;
 Claude's single subscription-only attempt timed out and remains incomplete
 without retry, downgrade, substitution, or paid fallback.
 
+The exact Task 13 closeout review target is
+`9c9ee9c7c75254c507e9984c27b9a4195273d21c`. Its 259 tests, Ruff,
+compilation, public identity, complete base-to-target diff hygiene, and clean
+release gate passed. Codex and Gemini returned `NO FINDINGS`; Gemini requested,
+observed, and completed `gemini-3.7-flash`. Claude closeout attempt
+`cd73c790-5ca5-4801-ab61-9b465d50e546` requested the dynamic `opus`
+capability alias through the subscription-only wrapper and ended
+`claude-timeout` with no observed／completed model or output. It was not
+retried, downgraded, substituted, or sent through a paid route. The frozen
+packet SHA-256 is
+`4a64926fc3a325e61b7962e5c6e3ad13d39a25d5b5716e740be16b6f493c7075`.
+
 Task 13 makes no tag, no package publication, no private integration, no
 GitHub Release, pull request, tester contact, signing, attestation, SBOM,
 Final Cut GUI, DTD, live-provider, application-submission, or
@@ -220,10 +232,10 @@ production-stability claim. Evidence is in `docs/TASK-13-VERIFICATION.md`.
 
 ## Next action
 
-Complete Task 13 closeout review, rerun the clean release gate, fast-forward
-the reviewed candidate to public `main`, and verify the fixed six-job CI run at
-the exact remote SHA. This next action does not authorize a tag, release,
-package publication, private integration, or tester contact.
+Commit the sanitized Task 13 review evidence, rerun the clean release gate,
+fast-forward the reviewed candidate to public `main`, and verify the fixed
+six-job CI run at the exact remote SHA. This next action does not authorize a
+tag, release, package publication, private integration, or tester contact.
 
 ## Implemented surface
 
