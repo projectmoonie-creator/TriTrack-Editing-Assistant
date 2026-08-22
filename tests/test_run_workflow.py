@@ -19,6 +19,7 @@ from tritrack_editing_assistant import (
     story_fcpxml,
     sync_scan,
     transcribe_takes,
+    transcription_result,
 )
 
 
@@ -78,6 +79,34 @@ def prepared_stages() -> list[dict[str, object]]:
             "outputHashes": {"doctorReceipt": "b" * 64},
         },
     ]
+
+
+def prepared_artifacts_v2() -> dict[str, dict[str, str]]:
+    artifacts = prepared_artifacts()
+    artifacts.update(
+        {
+            "transcriptionReport": {
+                "fileName": "transcription-report.json",
+                "sha256": "6" * 64,
+            },
+            "transcriptionResult": {
+                "fileName": "transcription-result-manifest.json",
+                "sha256": "7" * 64,
+            },
+        }
+    )
+    return artifacts
+
+
+def prepared_stages_v2() -> list[dict[str, object]]:
+    stages = prepared_stages()
+    transcribe = next(stage for stage in stages if stage["name"] == "transcribe")
+    transcribe["outputHashes"] = {
+        "transcriptBundle": "d" * 64,
+        "transcriptionReport": "6" * 64,
+        "transcriptionResult": "7" * 64,
+    }
+    return stages
 
 
 def invented_aligned() -> dict[str, object]:
@@ -192,6 +221,44 @@ class RunManifestTest(unittest.TestCase):
         self.assertNotIn(b"createdAt", first)
         self.assertNotIn(b"status", first)
         self.assertNotIn(b"/Users/", first)
+
+    def test_builds_v2_prepared_manifest_with_complete_transcription_authority(self) -> None:
+        manifest = self.build(
+            schema_version="tritrack.run-manifest/v2",
+            artifacts=prepared_artifacts_v2(),
+            stages=prepared_stages_v2(),
+        )
+
+        self.assertEqual(manifest["schemaVersion"], "tritrack.run-manifest/v2")
+        self.assertEqual(
+            set(manifest["artifacts"]),
+            {
+                "doctorReceipt",
+                "syncMap",
+                "transcriptBundle",
+                "transcriptionReport",
+                "transcriptionResult",
+                "stringOut",
+            },
+        )
+        transcribe = next(
+            stage for stage in manifest["stages"] if stage["name"] == "transcribe"
+        )
+        self.assertEqual(
+            set(transcribe["outputHashes"]),
+            {"transcriptBundle", "transcriptionReport", "transcriptionResult"},
+        )
+
+    def test_run_manifest_v1_schema_bytes_remain_pinned(self) -> None:
+        schema_path = (
+            Path(run_workflow.__file__).parent
+            / "schemas"
+            / "run-manifest-v1.schema.json"
+        )
+        self.assertEqual(
+            sha256(schema_path.read_bytes()),
+            "f2cc085ddff1db4a83074de2d8f132823136a5689a98aa244e1278e1920242bf",
+        )
 
     def test_rejects_unsafe_duplicate_and_phase_drift(self) -> None:
         duplicate = invented_sources()
@@ -633,6 +700,31 @@ class PrepareAlignTransitionTest(unittest.TestCase):
 
             self.assertEqual(calls, ["doctor", "sync", "transcribe", "emit"])
             self.assertEqual(bundle.manifest["phase"], "prepared")
+            self.assertEqual(
+                bundle.manifest["schemaVersion"], "tritrack.run-manifest/v2"
+            )
+            self.assertEqual(
+                set(bundle.artifacts),
+                {
+                    "doctorReceipt",
+                    "syncMap",
+                    "transcriptBundle",
+                    "transcriptionReport",
+                    "transcriptionResult",
+                    "stringOut",
+                },
+            )
+            result_manifest = json.loads(
+                bundle.artifacts["transcriptionResult"].encoded
+            )
+            self.assertEqual(
+                result_manifest["bundle"]["sha256"],
+                bundle.artifacts["transcriptBundle"].sha256,
+            )
+            self.assertEqual(
+                result_manifest["report"]["sha256"],
+                bundle.artifacts["transcriptionReport"].sha256,
+            )
             self.assertEqual(
                 [source["mediaId"] for source in bundle.manifest["sources"]],
                 ["A-001.MP4", "B-001.MP4"],
