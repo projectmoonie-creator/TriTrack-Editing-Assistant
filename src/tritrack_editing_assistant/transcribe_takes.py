@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import hallucination
+from . import hallucination, transcript_anomaly
 from .contracts import validate_contract
 from .process import ProcessResult, require_absent_output, run_bounded
 
@@ -106,6 +106,17 @@ def canonicalize_whisper_evidence(
         previous_end = end_ms
 
     hallucination.reject_repeated_cues([str(cue["text"]) for cue in cues])
+    anomaly_cues = [
+        {
+            "text": cue["text"],
+            "start_ms": cue["startMs"],
+            "end_ms": cue["endMs"],
+        }
+        for cue in cues
+    ]
+    flags = transcript_anomaly.find_anomalies(anomaly_cues)
+    if transcript_anomaly.transcript_verdict(anomaly_cues, flags).invalid:
+        raise ValueError("TRITRACK_TRANSCRIPT_ANOMALY_INVALID")
     return cues
 
 

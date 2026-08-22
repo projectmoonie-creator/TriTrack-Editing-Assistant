@@ -128,6 +128,26 @@ class TranscriptCanonicalizationTest(unittest.TestCase):
                 audio_duration_ms=3424,
             )
 
+    def test_rejects_one_cue_decoder_stutter_as_invalid_transcript(self) -> None:
+        evidence = {
+            "result": {"language": "zh"},
+            "transcription": [
+                {
+                    "offsets": {"from": 0, "to": 35_800},
+                    "text": "嗯,嗯,嗯,嗯,嗯,後面還有 invented speech",
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(
+            ValueError, "TRITRACK_TRANSCRIPT_ANOMALY_INVALID"
+        ):
+            transcribe_takes.canonicalize_whisper_evidence(
+                evidence,
+                requested_language="zh",
+                audio_duration_ms=35_800,
+            )
+
     def test_accepts_exact_blank_audio_sentinel_only_for_proven_silence(self) -> None:
         evidence = {
             "result": {"language": "en"},

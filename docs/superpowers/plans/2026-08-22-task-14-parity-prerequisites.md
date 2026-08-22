@@ -129,7 +129,7 @@ reserved destination on failure.
 - Create: `src/tritrack_editing_assistant/transcript_anomaly.py`
 - Modify: `src/tritrack_editing_assistant/transcribe_takes.py:52-109`
 
-- [ ] **Step 1: Write RED tests for the public API**
+- [x] **Step 1: Write RED tests for the public API**
 
 Use `CueFlag(index, start_ms, end_ms, text, reason)`,
 `AnomalyRange(start_ms, end_ms, reasons, samples, long)`,
@@ -138,14 +138,14 @@ Use `CueFlag(index, start_ms, end_ms, text, reason)`,
 `transcript_verdict(cues, flags)`. Tests use invented text, assert the five
 transcript invariants above, and assert a one-cue decoder loop is invalid.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `venv/bin/python -m unittest tests.test_transcript_anomaly -v`
 
 Expected: FAIL because `tritrack_editing_assistant.transcript_anomaly` does
 not exist; no unrelated test error is acceptable.
 
-- [ ] **Step 3: Implement the minimal pure module**
+- [x] **Step 3: Implement the minimal pure module**
 
 Implement constants `MIN_REPEAT_CUES = 3`, `MIN_STUTTER_TOKENS = 4`,
 `LONG_RANGE_MS = 60000`, and `INVALID_RATIO = 0.9`. Preserve the delimiter-only
@@ -153,19 +153,19 @@ known limitation. Use `dict.setdefault` so boilerplate/stutter reasons outrank
 cross-cue repetition. An empty verdict is
 `TranscriptVerdict(cues=0, flagged=0, invalid=False)`.
 
-- [ ] **Step 4: Integrate the verdict at canonicalization**
+- [x] **Step 4: Integrate the verdict at canonicalization**
 
 After cue construction, call `find_anomalies` and `transcript_verdict`; raise
 `TRITRACK_TRANSCRIPT_ANOMALY_INVALID` only for an invalid verdict. Do not reject
 a merely patchy transcript.
 
-- [ ] **Step 5: Verify GREEN and regressions**
+- [x] **Step 5: Verify GREEN and regressions**
 
 Run: `venv/bin/python -m unittest tests.test_transcript_anomaly tests.test_transcribe_takes -v`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/tritrack_editing_assistant/transcript_anomaly.py src/tritrack_editing_assistant/transcribe_takes.py tests/test_transcript_anomaly.py tests/test_transcribe_takes.py
@@ -178,34 +178,34 @@ git commit -m "feat: detect invalid transcript anomalies"
 - Create: `tests/test_pair_selection.py`
 - Create: `src/tritrack_editing_assistant/pair_selection.py`
 
-- [ ] **Step 1: Write RED tests**
+- [x] **Step 1: Write RED tests**
 
 Exercise `drift_prior`, `coverage`, `new_coverage_seconds`, `accept`,
 `select_pairs`, and `audio_master` with new invented measurements. Pin five
 drift samples, 5-second maximum spread, 2-to-10-second tolerance, 3-second
 minimum overlap, 6.0 peak ratio, and 10-second minimum new coverage.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `venv/bin/python -m unittest tests.test_pair_selection -v`
 
 Expected: FAIL because `tritrack_editing_assistant.pair_selection` does not
 exist.
 
-- [ ] **Step 3: Implement the minimal pure module**
+- [x] **Step 3: Implement the minimal pure module**
 
 Return immutable-looking copied mappings rather than mutating measurements.
 Sort accepted candidates by correlation before drift-prior, then descending
 ratio, then source ID for deterministic ties. Keep the documented limitation:
 a simultaneous duplicate contributes no new coverage and is discarded.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `venv/bin/python -m unittest tests.test_pair_selection -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tritrack_editing_assistant/pair_selection.py tests/test_pair_selection.py
