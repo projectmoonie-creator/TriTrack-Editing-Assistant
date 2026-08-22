@@ -268,11 +268,39 @@ model path exists. Task 14 does not claim the deferred VAD default, recognition
 accuracy, simultaneous N-camera preservation, a downstream parity run, a tag,
 release, package publication, private integration, or production stability.
 
+Task 14 amendment v2 consumes only the hash-bound `task13-parity-v2`
+clean-room correction at public base
+`1c9334290e75d1cc70a31b4b86cc273fcc59b2ae`. It adds the missing
+sparse-source guard and makes alternative retry plus selected-source adoption
+consult the same invention-and-sparsity policy. The unchanged
+`transcript-bundle-v1` remains cue authority; additive
+`transcription-report-v2`, `transcription-result-manifest-v2`, a deterministic
+human-readable density table, and `run-manifest-v3` record every attempted
+source's density facts, thresholds, settings, selection, rescue／unrescued
+counts, and shared-alternative warnings. Exact v1 transcription results and
+v1／v2 run bundles remain readable. VAD stays off with no new switch, model
+path, or model pin. Public decision and verification are in
+`docs/TASK-14-AMENDMENT-V2-DECISION.md` and
+`docs/TASK-14-AMENDMENT-V2-VERIFICATION.md`.
+
+The required Claude convergence supplement reused the byte-identical Task 14
+packet at SHA-256
+`c9c4efb8281386522f751e59c2949263b8394317dd658199650b39105dfaffae`.
+Attempt `2263620f-be88-44e1-8c69-dceaae00606d` again ended
+`claude-timeout` after preflight with no observed／completed model, usable
+response, or usage, and remains incomplete without retry, downgrade,
+substitution, or paid fallback. The Task 14 verdict now discloses that the
+private-authored v1 specification is known by its authoring side to be wrong,
+so a Claude conclusion about the frozen v1 packet would not be neutral.
+
 ## Next action
 
-No automatic implementation follows Task 14. Keep VAD off until a separately
-authorized public task supplies a closed, non-rejected model pin with exact
-byte length and SHA-256 and proves the installed-engine argument contract.
+No automatic implementation follows Task 14 amendment v2. Its three corrected
+behavioral guards are now present, but they do not authorize a default flip.
+Keep VAD off until a separately authorized public task supplies a closed,
+non-rejected model pin with exact byte length and SHA-256, proves the
+installed-engine argument contract, and ships the complete validation／switch
+boundary coherently.
 A downstream parity proof also remains outside this public candidate until an
 explicitly authorized public release exists. Do not infer authority for a tag,
 release, package publication, private integration, or tester contact.
@@ -286,10 +314,12 @@ release, package publication, private integration, or tester contact.
 - profile-bound deterministic string-out and atomic FCPXML 1.14 publication;
 - fixed-profile CPU-only local transcription with strict deterministic bundle
   canonicalization and atomic no-overwrite publication;
-- anomaly-bound transcription results with alternative retry, honest reuse
-  provenance, per-take degradation, and semantic bundle／report cross-binding;
-- relay-capable `sync-map-v2` and `run-manifest-v2` authority with forced audio
-  master and deterministic string-out／story projection;
+- anomaly- and sparse-bound transcription results with shared-policy
+  alternative retry／adoption, honest reuse provenance, per-take degradation,
+  density evidence, and semantic bundle／report cross-binding;
+- relay-capable `sync-map-v2`, backward-readable `run-manifest-v2`, and new
+  density-bearing `run-manifest-v3` authority with forced audio master and
+  deterministic string-out／story projection;
 - deterministic cue-addressed text promotion with immutable local timing and
   exact-byte provenance;
 - optional offline Gemini receipt conformance that shares the local promotion
@@ -321,6 +351,11 @@ The network-capable `gemini_transcribe.mjs` component remains planned.
 
 The public `origin` is
 `https://github.com/projectmoonie-creator/TriTrack-Editing-Assistant.git`.
+The `codex/task13-parity-mechanisms` worktree is registered at the public-safe
+sibling locator
+`../TriTrack-Editing-Assistant-worktrees/task13-parity-mechanisms`; the move
+from the misplaced locator preserved the exact pre-fix branch tip
+`1c9334290e75d1cc70a31b4b86cc273fcc59b2ae` and removed the old registration.
 Closeout requires verifying that its `main` SHA exactly matches the local green
 candidate, making the GitHub copy the off-device Git backup. Tags, releases,
 pull requests, tester contact, package publication, and application submission

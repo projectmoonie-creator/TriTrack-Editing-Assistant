@@ -90,6 +90,8 @@ class PackagingPolicyTest(unittest.TestCase):
             "docs/TASK-11-VERIFICATION.md",
             "docs/TASK-13-DECISION.md",
             "docs/TASK-13-VERIFICATION.md",
+            "docs/TASK-14-AMENDMENT-V2-DECISION.md",
+            "docs/TASK-14-AMENDMENT-V2-VERIFICATION.md",
             "examples/downstream_fixture/aligned-transcript.json",
             "examples/downstream_seam.py",
             "scripts/release_gate.py",
@@ -97,7 +99,7 @@ class PackagingPolicyTest(unittest.TestCase):
             "tests/test_downstream_seam.py",
         ):
             self.assertIn(required, policy["sdist"]["expectedMembers"])
-        self.assertEqual(len(policy["wheel"]["expectedMembers"]), 45)
+        self.assertEqual(len(policy["wheel"]["expectedMembers"]), 49)
         self.assertFalse(
             any(
                 "downstream" in member

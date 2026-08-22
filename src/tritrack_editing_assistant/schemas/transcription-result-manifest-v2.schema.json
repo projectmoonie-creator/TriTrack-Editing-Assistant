@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/transcription-result-manifest-v2.schema.json",
+  "title": "TriTrack transcription result manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "bundle", "report", "densityTable"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.transcription-result-manifest/v2"},
+    "bundle": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {"properties": {"fileName": {"const": "transcript-bundle.json"}}}
+      ]
+    },
+    "report": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {"properties": {"fileName": {"const": "transcription-report.json"}}}
+      ]
+    },
+    "densityTable": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {"properties": {"fileName": {"const": "transcription-density.txt"}}}
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "sha256"],
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

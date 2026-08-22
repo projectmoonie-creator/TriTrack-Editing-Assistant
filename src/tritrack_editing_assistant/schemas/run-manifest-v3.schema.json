@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/run-manifest-v3.schema.json",
+  "title": "TriTrack immutable run manifest v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "toolVersion",
+    "runId",
+    "profileId",
+    "bindingId",
+    "phase",
+    "nextAction",
+    "manifestChain",
+    "sources",
+    "artifacts",
+    "stages"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.run-manifest/v3"},
+    "toolVersion": {"const": "0.1.0a0"},
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "profileId": {"const": "uhd-2997-ndf-fcpxml-1.14"},
+    "bindingId": {"const": "basic-title-v1"},
+    "phase": {"enum": ["prepared", "aligned", "finished"]},
+    "nextAction": {
+      "enum": ["provide-revision", "edit-paper-workbook", "complete"]
+    },
+    "manifestChain": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/sha256"}
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "doctorReceipt": {"$ref": "#/$defs/artifact"},
+        "syncMap": {"$ref": "#/$defs/artifact"},
+        "transcriptBundle": {"$ref": "#/$defs/artifact"},
+        "transcriptionReport": {"$ref": "#/$defs/artifact"},
+        "transcriptionResult": {"$ref": "#/$defs/artifact"},
+        "transcriptionDensity": {"$ref": "#/$defs/artifact"},
+        "stringOut": {"$ref": "#/$defs/artifact"},
+        "alignedTranscript": {"$ref": "#/$defs/artifact"},
+        "paperWorkbook": {"$ref": "#/$defs/artifact"},
+        "grouping": {"$ref": "#/$defs/artifact"},
+        "workingCut": {"$ref": "#/$defs/artifact"},
+        "storyCut": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/stage"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"phase": {"const": "prepared"}}},
+      "then": {
+        "properties": {
+          "nextAction": {"const": "provide-revision"},
+          "manifestChain": {"maxItems": 0},
+          "artifacts": {
+            "required": [
+              "doctorReceipt",
+              "syncMap",
+              "transcriptBundle",
+              "transcriptionReport",
+              "transcriptionResult",
+              "transcriptionDensity",
+              "stringOut"
+            ],
+            "propertyNames": {
+              "enum": [
+                "doctorReceipt",
+                "syncMap",
+                "transcriptBundle",
+                "transcriptionReport",
+                "transcriptionResult",
+                "transcriptionDensity",
+                "stringOut"
+              ]
+            }
+          },
+          "stages": {
+            "minItems": 4,
+            "maxItems": 4,
+            "prefixItems": [
+              {"properties": {"name": {"const": "doctor"}}},
+              {"properties": {"name": {"const": "sync"}}},
+              {"properties": {"name": {"const": "transcribe"}}},
+              {"properties": {"name": {"const": "emit"}}}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"phase": {"const": "aligned"}}},
+      "then": {
+        "properties": {
+          "nextAction": {"const": "edit-paper-workbook"},
+          "manifestChain": {"minItems": 1, "maxItems": 1},
+          "artifacts": {
+            "required": ["alignedTranscript", "paperWorkbook"],
+            "propertyNames": {
+              "enum": ["alignedTranscript", "paperWorkbook"]
+            }
+          },
+          "stages": {
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {"properties": {"name": {"const": "align"}}},
+              {"properties": {"name": {"const": "paper"}}}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"phase": {"const": "finished"}}},
+      "then": {
+        "properties": {
+          "nextAction": {"const": "complete"},
+          "manifestChain": {"minItems": 2, "maxItems": 2},
+          "artifacts": {
+            "required": ["grouping", "workingCut", "storyCut"],
+            "propertyNames": {"enum": ["grouping", "workingCut", "storyCut"]}
+          },
+          "stages": {
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+              {"properties": {"name": {"const": "paper"}}},
+              {"properties": {"name": {"const": "organize"}}},
+              {"properties": {"name": {"const": "emit"}}}
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "hashMap": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9]*$"},
+      "additionalProperties": {"$ref": "#/$defs/sha256"}
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera", "mediaId", "sha256", "transcribed"],
+      "properties": {
+        "camera": {"enum": ["A", "B"]},
+        "mediaId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\\\r\\n]+$"
+        },
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "transcribed": {"type": "boolean"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "sha256"],
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "inputHashes", "outputHashes"],
+      "properties": {
+        "name": {
+          "enum": [
+            "doctor",
+            "sync",
+            "transcribe",
+            "align",
+            "emit",
+            "organize",
+            "paper"
+          ]
+        },
+        "inputHashes": {"$ref": "#/$defs/hashMap"},
+        "outputHashes": {"$ref": "#/$defs/hashMap"}
+      }
+    }
+  }
+}

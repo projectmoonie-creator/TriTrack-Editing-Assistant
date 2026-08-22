@@ -17,7 +17,9 @@ CONTRACT_NAMES = frozenset(
         "sync-map-v2",
         "transcript-bundle-v1",
         "transcription-report-v1",
+        "transcription-report-v2",
         "transcription-result-manifest-v1",
+        "transcription-result-manifest-v2",
         "text-revision-v1",
         "aligned-transcript-v1",
         "grouping-v1",
@@ -25,6 +27,7 @@ CONTRACT_NAMES = frozenset(
         "title-binding-v1",
         "run-manifest-v1",
         "run-manifest-v2",
+        "run-manifest-v3",
         "provider-receipt-v1",
     }
 )

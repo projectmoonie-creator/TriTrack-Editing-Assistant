@@ -342,6 +342,73 @@ VALID_CONTRACTS.update(
                 "sha256": "b" * 64,
             },
         },
+        "transcription-report-v2": {
+            "schemaVersion": "tritrack.transcription-report/v2",
+            "profileId": "whisper-cpp-cpu-no-fallback-v1",
+            "requestedTakeIds": ["take-001"],
+            "runSettings": {
+                "language": "zh",
+                "recognitionModelSha256": "f" * 64,
+                "voiceActivity": "off",
+                "voiceActivityModel": None,
+            },
+            "sparsePolicy": {
+                "charactersPerSecond": 1.0,
+                "minimumDurationMs": 30000,
+                "contentDefinition": "unicode-letters-numbers-symbols-v1",
+            },
+            "summary": {
+                "sourceAttemptCount": 1,
+                "sparseSourceCount": 0,
+                "retryAttemptCount": 0,
+                "rescuedTakeCount": 0,
+                "unrescuedTakeCount": 0,
+            },
+            "takes": [
+                {
+                    "takeId": "take-001",
+                    "status": "completed",
+                    "selectedSourceSha256": "a" * 64,
+                    "selectionReason": "primary-usable",
+                    "sharedAlternativeWithTakeIds": [],
+                    "attempts": [
+                        {
+                            "ordinal": 1,
+                            "sourceSha256": "a" * 64,
+                            "outcome": "completed",
+                            "failureCode": None,
+                            "settings": {
+                                "language": "zh",
+                                "recognitionModelSha256": "f" * 64,
+                                "voiceActivity": "off",
+                                "voiceActivityModel": None,
+                            },
+                            "metrics": {
+                                "durationMs": 60000,
+                                "characterCount": 180,
+                                "charactersPerSecond": "3.000",
+                                "sparse": False,
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+        "transcription-result-manifest-v2": {
+            "schemaVersion": "tritrack.transcription-result-manifest/v2",
+            "bundle": {
+                "fileName": "transcript-bundle.json",
+                "sha256": "a" * 64,
+            },
+            "report": {
+                "fileName": "transcription-report.json",
+                "sha256": "b" * 64,
+            },
+            "densityTable": {
+                "fileName": "transcription-density.txt",
+                "sha256": "c" * 64,
+            },
+        },
     }
 )
 
@@ -366,6 +433,14 @@ _RUN_MANIFEST_V2["stages"][2]["outputHashes"].update(
     }
 )
 VALID_CONTRACTS["run-manifest-v2"] = _RUN_MANIFEST_V2
+_RUN_MANIFEST_V3 = copy.deepcopy(_RUN_MANIFEST_V2)
+_RUN_MANIFEST_V3["schemaVersion"] = "tritrack.run-manifest/v3"
+_RUN_MANIFEST_V3["artifacts"]["transcriptionDensity"] = {
+    "fileName": "transcription-density.txt",
+    "sha256": "8" * 64,
+}
+_RUN_MANIFEST_V3["stages"][2]["outputHashes"]["transcriptionDensity"] = "8" * 64
+VALID_CONTRACTS["run-manifest-v3"] = _RUN_MANIFEST_V3
 
 
 class ContractValidationTest(unittest.TestCase):
@@ -376,6 +451,15 @@ class ContractValidationTest(unittest.TestCase):
                 "transcription-report-v1",
                 "transcription-result-manifest-v1",
                 "run-manifest-v2",
+            }.issubset(contracts.CONTRACT_NAMES)
+        )
+
+    def test_v2_sparse_contract_names_are_closed_and_installed(self):
+        self.assertTrue(
+            {
+                "transcription-report-v2",
+                "transcription-result-manifest-v2",
+                "run-manifest-v3",
             }.issubset(contracts.CONTRACT_NAMES)
         )
 
@@ -545,6 +629,43 @@ class ContractValidationTest(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             contracts.validate_contract("transcription-result-manifest-v1", payload)
+
+    def test_v2_report_requires_metrics_on_every_attempt(self):
+        payload = copy.deepcopy(VALID_CONTRACTS["transcription-report-v2"])
+        del payload["takes"][0]["attempts"][0]["metrics"]
+
+        with self.assertRaises(ValidationError):
+            contracts.validate_contract("transcription-report-v2", payload)
+
+    def test_v2_sparse_outcome_requires_sparse_metrics(self):
+        payload = copy.deepcopy(VALID_CONTRACTS["transcription-report-v2"])
+        attempt = payload["takes"][0]["attempts"][0]
+        attempt["outcome"] = "sparse"
+        attempt["metrics"]["sparse"] = False
+
+        with self.assertRaises(ValidationError):
+            contracts.validate_contract("transcription-report-v2", payload)
+
+    def test_v2_completed_attempt_requires_measured_metrics(self):
+        payload = copy.deepcopy(VALID_CONTRACTS["transcription-report-v2"])
+        payload["takes"][0]["attempts"][0]["metrics"] = {
+            "durationMs": None,
+            "characterCount": None,
+            "charactersPerSecond": None,
+            "sparse": None,
+        }
+
+        with self.assertRaises(ValidationError):
+            contracts.validate_contract("transcription-report-v2", payload)
+
+    def test_v2_result_manifest_requires_density_table(self):
+        payload = copy.deepcopy(
+            VALID_CONTRACTS["transcription-result-manifest-v2"]
+        )
+        del payload["densityTable"]
+
+        with self.assertRaises(ValidationError):
+            contracts.validate_contract("transcription-result-manifest-v2", payload)
 
 
 if __name__ == "__main__":

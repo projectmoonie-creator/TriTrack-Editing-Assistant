@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/transcription-report-v2.schema.json",
+  "title": "TriTrack observable path-free transcription report v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "requestedTakeIds",
+    "runSettings",
+    "sparsePolicy",
+    "summary",
+    "takes"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.transcription-report/v2"},
+    "profileId": {"const": "whisper-cpp-cpu-no-fallback-v1"},
+    "requestedTakeIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/takeId"},
+      "uniqueItems": true
+    },
+    "runSettings": {"$ref": "#/$defs/newSettings"},
+    "sparsePolicy": {"$ref": "#/$defs/sparsePolicy"},
+    "summary": {"$ref": "#/$defs/summary"},
+    "takes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/take"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "takeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\\\\\r\\n]+$"
+    },
+    "modelName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "newSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "recognitionModelSha256", "voiceActivity", "voiceActivityModel"],
+      "properties": {
+        "language": {"type": "string", "pattern": "^[a-z]{2,3}$"},
+        "recognitionModelSha256": {"$ref": "#/$defs/sha256"},
+        "voiceActivity": {"enum": ["off", "on"]},
+        "voiceActivityModel": {
+          "anyOf": [{"type": "null"}, {"$ref": "#/$defs/modelName"}]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"voiceActivity": {"const": "off"}}},
+          "then": {"properties": {"voiceActivityModel": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"voiceActivity": {"const": "on"}}},
+          "then": {"properties": {"voiceActivityModel": {"$ref": "#/$defs/modelName"}}}
+        }
+      ]
+    },
+    "attemptSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "recognitionModelSha256", "voiceActivity", "voiceActivityModel"],
+      "properties": {
+        "language": {"oneOf": [{"const": "unknown"}, {"type": "string", "pattern": "^[a-z]{2,3}$"}]},
+        "recognitionModelSha256": {"oneOf": [{"const": "unknown"}, {"$ref": "#/$defs/sha256"}]},
+        "voiceActivity": {"enum": ["off", "on", "unknown"]},
+        "voiceActivityModel": {
+          "anyOf": [{"type": "null"}, {"const": "unknown"}, {"$ref": "#/$defs/modelName"}]
+        }
+      }
+    },
+    "sparsePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["charactersPerSecond", "minimumDurationMs", "contentDefinition"],
+      "properties": {
+        "charactersPerSecond": {"const": 1.0},
+        "minimumDurationMs": {"const": 30000},
+        "contentDefinition": {"const": "unicode-letters-numbers-symbols-v1"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAttemptCount",
+        "sparseSourceCount",
+        "retryAttemptCount",
+        "rescuedTakeCount",
+        "unrescuedTakeCount"
+      ],
+      "properties": {
+        "sourceAttemptCount": {"type": "integer", "minimum": 1},
+        "sparseSourceCount": {"type": "integer", "minimum": 0},
+        "retryAttemptCount": {"type": "integer", "minimum": 0},
+        "rescuedTakeCount": {"type": "integer", "minimum": 0},
+        "unrescuedTakeCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "unknownMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["durationMs", "characterCount", "charactersPerSecond", "sparse"],
+      "properties": {
+        "durationMs": {"type": "null"},
+        "characterCount": {"type": "null"},
+        "charactersPerSecond": {"type": "null"},
+        "sparse": {"type": "null"}
+      }
+    },
+    "measuredMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["durationMs", "characterCount", "charactersPerSecond", "sparse"],
+      "properties": {
+        "durationMs": {"type": "integer", "minimum": 1},
+        "characterCount": {"type": "integer", "minimum": 0},
+        "charactersPerSecond": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{3}$"
+        },
+        "sparse": {"type": "boolean"}
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "sourceSha256", "outcome", "failureCode", "settings", "metrics"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "outcome": {"enum": ["completed", "empty", "sparse", "invalid", "failed", "reused"]},
+        "failureCode": {
+          "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^TRITRACK_[A-Z0-9_]+$"}]
+        },
+        "settings": {"$ref": "#/$defs/attemptSettings"},
+        "metrics": {"oneOf": [{"$ref": "#/$defs/unknownMetrics"}, {"$ref": "#/$defs/measuredMetrics"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"outcome": {"enum": ["completed", "empty", "sparse", "reused"]}}},
+          "then": {"properties": {"failureCode": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"outcome": {"enum": ["invalid", "failed"]}}},
+          "then": {"properties": {"failureCode": {"type": "string"}}}
+        },
+        {
+          "if": {"properties": {"outcome": {"enum": ["completed", "empty", "sparse"]}}},
+          "then": {"properties": {"metrics": {"$ref": "#/$defs/measuredMetrics"}}}
+        },
+        {
+          "if": {"properties": {"outcome": {"enum": ["invalid", "failed", "reused"]}}},
+          "then": {"properties": {"metrics": {"$ref": "#/$defs/unknownMetrics"}}}
+        },
+        {
+          "if": {"properties": {"outcome": {"const": "sparse"}}},
+          "then": {
+            "properties": {
+              "metrics": {
+                "allOf": [
+                  {"$ref": "#/$defs/measuredMetrics"},
+                  {"properties": {"sparse": {"const": true}}}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "take": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "takeId",
+        "status",
+        "selectedSourceSha256",
+        "selectionReason",
+        "sharedAlternativeWithTakeIds",
+        "attempts"
+      ],
+      "properties": {
+        "takeId": {"$ref": "#/$defs/takeId"},
+        "status": {"enum": ["completed", "empty", "failed", "reused"]},
+        "selectedSourceSha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+        "selectionReason": {
+          "enum": [
+            "primary-usable",
+            "primary-sparse",
+            "primary-invalid",
+            "primary-empty",
+            "no-better-source",
+            "invalid",
+            "empty",
+            "reused"
+          ]
+        },
+        "sharedAlternativeWithTakeIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/takeId"}
+        },
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/attempt"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "failed"}}},
+          "then": {"properties": {"selectedSourceSha256": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["completed", "empty", "reused"]}}},
+          "then": {"properties": {"selectedSourceSha256": {"$ref": "#/$defs/sha256"}}}
+        }
+      ]
+    }
+  }
+}

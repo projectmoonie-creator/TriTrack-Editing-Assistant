@@ -115,14 +115,49 @@ _V2_PREPARED_SPEC = PhaseSpec(
         ("emit", ("stringOut",)),
     ),
 )
+_V3_PREPARED_SPEC = PhaseSpec(
+    next_action="provide-revision",
+    chain_length=0,
+    artifacts=(
+        ("doctorReceipt", "doctor.json"),
+        ("syncMap", "sync-map.json"),
+        ("transcriptBundle", "transcript-bundle.json"),
+        ("transcriptionReport", "transcription-report.json"),
+        ("transcriptionResult", "transcription-result-manifest.json"),
+        ("transcriptionDensity", "transcription-density.txt"),
+        ("stringOut", "string-out.fcpxml"),
+    ),
+    stages=("doctor", "sync", "transcribe", "emit"),
+    stage_outputs=(
+        ("doctor", ("doctorReceipt",)),
+        ("sync", ("syncMap",)),
+        (
+            "transcribe",
+            (
+                "transcriptBundle",
+                "transcriptionReport",
+                "transcriptionResult",
+                "transcriptionDensity",
+            ),
+        ),
+        ("emit", ("stringOut",)),
+    ),
+)
 _RUN_MANIFEST_V1 = "tritrack.run-manifest/v1"
 _RUN_MANIFEST_V2 = "tritrack.run-manifest/v2"
+_RUN_MANIFEST_V3 = "tritrack.run-manifest/v3"
 
 
 def _phase_spec(schema_version: str, phase: str) -> PhaseSpec:
-    if schema_version not in {_RUN_MANIFEST_V1, _RUN_MANIFEST_V2}:
+    if schema_version not in {
+        _RUN_MANIFEST_V1,
+        _RUN_MANIFEST_V2,
+        _RUN_MANIFEST_V3,
+    }:
         raise _manifest_error()
     try:
+        if schema_version == _RUN_MANIFEST_V3 and phase == "prepared":
+            return _V3_PREPARED_SPEC
         if schema_version == _RUN_MANIFEST_V2 and phase == "prepared":
             return _V2_PREPARED_SPEC
         return PHASE_SPECS[phase]
@@ -161,7 +196,11 @@ def _validate_manifest(payload: object) -> dict[str, object]:
             raise TypeError
         schema_version = payload.get("schemaVersion")
         contract = contracts.contract_name_for_schema_version(schema_version)
-        if contract not in {"run-manifest-v1", "run-manifest-v2"}:
+        if contract not in {
+            "run-manifest-v1",
+            "run-manifest-v2",
+            "run-manifest-v3",
+        }:
             raise ValueError
         contracts.validate_contract(contract, payload)
     except (TypeError, ValueError, ValidationError) as error:
@@ -335,10 +374,36 @@ def _validate_artifact(
         ) as error:
             raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
         return
+    if logical_name in {"transcriptionReport", "transcriptionResult"}:
+        try:
+            payload = json.loads(encoded.decode("utf-8", errors="strict"))
+            if not isinstance(payload, dict):
+                raise TypeError
+            contract = contracts.contract_name_for_schema_version(
+                payload.get("schemaVersion")
+            )
+            allowed = (
+                {"transcription-report-v1", "transcription-report-v2"}
+                if logical_name == "transcriptionReport"
+                else {
+                    "transcription-result-manifest-v1",
+                    "transcription-result-manifest-v2",
+                }
+            )
+            if contract not in allowed:
+                raise ValueError
+            contracts.validate_contract(contract, payload)
+        except (
+            UnicodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as error:
+            raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
+        return
     contracts_by_name = {
         "transcriptBundle": "transcript-bundle-v1",
-        "transcriptionReport": "transcription-report-v1",
-        "transcriptionResult": "transcription-result-manifest-v1",
         "alignedTranscript": "aligned-transcript-v1",
         "grouping": "grouping-v1",
         "workingCut": "working-cut-v1",
@@ -348,6 +413,13 @@ def _validate_artifact(
         _validate_json_artifact(
             encoded, contract=contract, code="TRITRACK_RUN_ARTIFACT_INVALID"
         )
+        return
+    if logical_name == "transcriptionDensity":
+        try:
+            if not encoded.decode("utf-8", errors="strict").strip():
+                raise ValueError
+        except (UnicodeError, ValueError) as error:
+            raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
         return
     if logical_name == "doctorReceipt":
         try:
@@ -408,6 +480,26 @@ def _validate_transcription_authority(
             or report["sha256"]
             != hashlib.sha256(artifacts["transcriptionReport"]).hexdigest()
         ):
+            raise ValueError
+        result_version = result.get("schemaVersion")
+        if result_version == "tritrack.transcription-result-manifest/v1":
+            if "transcriptionDensity" in artifacts:
+                raise ValueError
+        elif result_version == "tritrack.transcription-result-manifest/v2":
+            density = result.get("densityTable")
+            if not isinstance(density, dict):
+                raise TypeError
+            density_bytes = artifacts.get("transcriptionDensity")
+            if (
+                density_bytes is None
+                or density["fileName"] != "transcription-density.txt"
+                or density["sha256"]
+                != hashlib.sha256(density_bytes).hexdigest()
+                or density_bytes
+                != transcription_result._density_table(report_payload)
+            ):
+                raise ValueError
+        else:
             raise ValueError
         transcription_result.validate_result_relationships(
             bundle_payload, report_payload
@@ -847,6 +939,12 @@ def prepare_run(
             staging / "transcription-result-manifest.json",
             result.manifest_bytes,
         )
+        if result.density_table_bytes is None:
+            raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+        _write_manifest(
+            staging / "transcription-density.txt",
+            result.density_table_bytes,
+        )
         selected_hashes = {
             take["selectedSourceSha256"]
             for take in result.report["takes"]
@@ -878,7 +976,7 @@ def prepare_run(
             source_hashes, model_path=selected_model, model_sha256=model_sha256
         )
         artifacts = _artifact_records(
-            staging, "prepared", schema_version=_RUN_MANIFEST_V2
+            staging, "prepared", schema_version=_RUN_MANIFEST_V3
         )
         stages = [
             {
@@ -909,6 +1007,7 @@ def prepare_run(
                         "transcriptBundle",
                         "transcriptionReport",
                         "transcriptionResult",
+                        "transcriptionDensity",
                     )
                 },
             },
@@ -932,7 +1031,7 @@ def prepare_run(
             sources=prepared_inventory,
             stages=stages,
             artifacts=artifacts,
-            schema_version=_RUN_MANIFEST_V2,
+            schema_version=_RUN_MANIFEST_V3,
         )
 
     return summarize_bundle(publish_bundle(Path(output_dir), build))

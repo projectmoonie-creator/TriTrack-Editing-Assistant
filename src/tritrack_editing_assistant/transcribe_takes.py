@@ -35,6 +35,7 @@ class TranscribedTake:
     source_sha256: str
     status: str
     cues: tuple[dict[str, object], ...]
+    duration_ms: int | None = None
 
 
 def _object(value: object) -> Mapping[str, object]:
@@ -508,6 +509,7 @@ def transcribe_source(
         source_sha256=source_sha256,
         status="empty" if silent else "completed",
         cues=tuple(cues),
+        duration_ms=duration_ms,
     )
 
 

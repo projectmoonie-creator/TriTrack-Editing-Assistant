@@ -47,18 +47,24 @@ here.
   explicit audio-master policy, `sync-map-v2`, and `run-manifest-v2`
   propagation through both deterministic FCPXML paths. Published v1 contracts
   remain readable and `transcript-bundle-v1` remains cue authority.
+- Task 14 amendment v2: the corrected clean-room constraint adds the missing
+  sparse-source verdict, makes both retry and adoption consult the same
+  invention-plus-sparsity policy, emits per-source machine and human density
+  evidence, and introduces additive transcription report／result v2 plus
+  `run-manifest-v3`. Existing v1／v2 authorities remain readable.
 
 ## Alpha-candidate sequence
 
 Tasks 12 and 13 are complete. Task 14 is the current public candidate;
 `STATUS.md` owns its exact verification, review, and remote-custody state.
 
-Task 14 deliberately does not enable voice-activity detection. Its anomaly and
-retry mechanisms are necessary prerequisites, not permission to invent a model
-pin. A later default flip requires a closed non-rejected public VAD model entry
-with verified byte length and SHA-256 plus coherent pre-decode validation and
-wrapper-level switch tests. This roadmap makes no VAD-default completion,
-recognition-accuracy, or simultaneous N-camera claim.
+Task 14 deliberately does not enable voice-activity detection. Its anomaly,
+sparse-source, and shared retry／adoption mechanisms are necessary
+prerequisites, not permission to invent a model pin. A later default flip
+requires a closed non-rejected public VAD model entry with verified byte length
+and SHA-256 plus coherent pre-decode validation and wrapper-level switch tests.
+This roadmap makes no VAD-default completion, recognition-accuracy, or
+simultaneous N-camera claim.
 
 ## Outward-action boundary
 

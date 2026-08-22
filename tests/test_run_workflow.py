@@ -109,6 +109,22 @@ def prepared_stages_v2() -> list[dict[str, object]]:
     return stages
 
 
+def prepared_artifacts_v3() -> dict[str, dict[str, str]]:
+    artifacts = prepared_artifacts_v2()
+    artifacts["transcriptionDensity"] = {
+        "fileName": "transcription-density.txt",
+        "sha256": "8" * 64,
+    }
+    return artifacts
+
+
+def prepared_stages_v3() -> list[dict[str, object]]:
+    stages = prepared_stages_v2()
+    transcribe = next(stage for stage in stages if stage["name"] == "transcribe")
+    transcribe["outputHashes"]["transcriptionDensity"] = "8" * 64
+    return stages
+
+
 def invented_aligned() -> dict[str, object]:
     return {
         "schemaVersion": "tritrack.aligned-transcript/v1",
@@ -247,6 +263,39 @@ class RunManifestTest(unittest.TestCase):
         self.assertEqual(
             set(transcribe["outputHashes"]),
             {"transcriptBundle", "transcriptionReport", "transcriptionResult"},
+        )
+
+    def test_builds_v3_prepared_manifest_with_density_evidence(self) -> None:
+        manifest = self.build(
+            schema_version="tritrack.run-manifest/v3",
+            artifacts=prepared_artifacts_v3(),
+            stages=prepared_stages_v3(),
+        )
+
+        self.assertEqual(manifest["schemaVersion"], "tritrack.run-manifest/v3")
+        self.assertEqual(
+            set(manifest["artifacts"]),
+            {
+                "doctorReceipt",
+                "syncMap",
+                "transcriptBundle",
+                "transcriptionReport",
+                "transcriptionResult",
+                "transcriptionDensity",
+                "stringOut",
+            },
+        )
+        transcribe = next(
+            stage for stage in manifest["stages"] if stage["name"] == "transcribe"
+        )
+        self.assertEqual(
+            set(transcribe["outputHashes"]),
+            {
+                "transcriptBundle",
+                "transcriptionReport",
+                "transcriptionResult",
+                "transcriptionDensity",
+            },
         )
 
     def test_run_manifest_v1_schema_bytes_remain_pinned(self) -> None:
@@ -636,6 +685,7 @@ class PrepareAlignTransitionTest(unittest.TestCase):
                                 "text": "Invented words.",
                             },
                         ),
+                        duration_ms=500,
                     )
                 ),
             )
@@ -724,7 +774,7 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             self.assertEqual(calls, ["doctor", "sync", "transcribe", "emit"])
             self.assertEqual(bundle.manifest["phase"], "prepared")
             self.assertEqual(
-                bundle.manifest["schemaVersion"], "tritrack.run-manifest/v2"
+                bundle.manifest["schemaVersion"], "tritrack.run-manifest/v3"
             )
             self.assertEqual(
                 set(bundle.artifacts),
@@ -734,6 +784,7 @@ class PrepareAlignTransitionTest(unittest.TestCase):
                     "transcriptBundle",
                     "transcriptionReport",
                     "transcriptionResult",
+                    "transcriptionDensity",
                     "stringOut",
                 },
             )
@@ -747,6 +798,10 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             self.assertEqual(
                 result_manifest["report"]["sha256"],
                 bundle.artifacts["transcriptionReport"].sha256,
+            )
+            self.assertEqual(
+                result_manifest["densityTable"]["sha256"],
+                bundle.artifacts["transcriptionDensity"].sha256,
             )
             self.assertEqual(
                 [source["mediaId"] for source in bundle.manifest["sources"]],
@@ -781,16 +836,21 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             report["requestedTakeIds"] = ["different-take"]
             report["takes"][0]["takeId"] = "different-take"
             report_bytes = transcription_result._canonical_bytes(
-                "transcription-report-v1", report
+                "transcription-report-v2", report
             )
             prepared.artifacts["transcriptionReport"].path.write_bytes(report_bytes)
+            density_bytes = transcription_result._density_table(report)
+            prepared.artifacts["transcriptionDensity"].path.write_bytes(
+                density_bytes
+            )
 
             result = json.loads(
                 prepared.artifacts["transcriptionResult"].encoded
             )
             result["report"]["sha256"] = sha256(report_bytes)
+            result["densityTable"]["sha256"] = sha256(density_bytes)
             result_bytes = transcription_result._canonical_bytes(
-                "transcription-result-manifest-v1", result
+                "transcription-result-manifest-v2", result
             )
             prepared.artifacts["transcriptionResult"].path.write_bytes(result_bytes)
 
@@ -801,6 +861,9 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             manifest["artifacts"]["transcriptionResult"]["sha256"] = sha256(
                 result_bytes
             )
+            manifest["artifacts"]["transcriptionDensity"]["sha256"] = sha256(
+                density_bytes
+            )
             transcribe_stage = next(
                 stage for stage in manifest["stages"] if stage["name"] == "transcribe"
             )
@@ -809,6 +872,9 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             )
             transcribe_stage["outputHashes"]["transcriptionResult"] = sha256(
                 result_bytes
+            )
+            transcribe_stage["outputHashes"]["transcriptionDensity"] = sha256(
+                density_bytes
             )
             (prepared.root / run_workflow.MANIFEST_FILE_NAME).write_bytes(
                 run_workflow.encode_manifest(manifest)

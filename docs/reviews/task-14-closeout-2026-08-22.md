@@ -44,6 +44,17 @@ in 22.666 seconds.
 
 ## Review provenance and adjudication
 
+### Conflict disclosure
+
+Task 14 implemented the v1 specification authored on the private side, and
+the private side now knows that specification was wrong because it omitted
+the sparse-source failure mode. Therefore any Claude-lane conclusion about
+this frozen Task 14 packet is not neutral. The packet remains the required
+historical review object, but neither a favorable nor an unfavorable answer
+may override the corrected, separately hash-bound v2 amendment. This
+disclosure comes from the producer-authorized amendment; no private repository
+was read.
+
 The frozen closeout packet SHA-256 is
 `c9c4efb8281386522f751e59c2949263b8394317dd658199650b39105dfaffae`.
 Both external lanes received those exact bytes once.
@@ -66,14 +77,25 @@ source-inspection evidence. Report SHA-256:
 Status-ledger SHA-256:
 `3f54024d988d86d2fac56cdf31bab5d403c15cb1933d5a660d93cdb7b008fd1f`.
 
-Claude attempt `1061392e-4861-43b2-aac2-2f5511a70c20` requested the dynamic
-`opus` capability alias through the approved subscription-only wrapper. It
-ended `claude-timeout`; observed and completed models, response, usage, and
-completion time are absent, and `modelRequestSent` is ambiguous. The attempt
-is incomplete. It was not retried, downgraded, substituted, or sent through
-an API key, PAYG, Console-credit, extra-usage, or alternate-provider lane.
-Incomplete-ledger SHA-256:
+The original Claude attempt `1061392e-4861-43b2-aac2-2f5511a70c20` requested
+the dynamic `opus` capability alias through the approved subscription-only
+wrapper. It ended `claude-timeout`; observed and completed models, response,
+usage, and completion time are absent, and `modelRequestSent` is ambiguous.
+Its archived incomplete-ledger SHA-256 is
 `b148126331feded641b8eb4b66489730826d9ac2a0856ba122273e3a7d8f8ded`.
+
+After the lane was reported restored, the required convergence supplement
+sent the exact same frozen packet bytes through the same audit-grade wrapper;
+it did not re-freeze a packet or use a weaker gate. Supplemental attempt
+`2263620f-be88-44e1-8c69-dceaae00606d` also ended `claude-timeout` after
+preflight. Its requested model was the dynamic `opus` capability alias;
+observed and completed models, response, usage, completion time, and
+`modelRequestSent` remain absent or ambiguous. Its current incomplete-ledger
+SHA-256 is
+`aeaf7dcfbaf3d874a3d33f2a108257d20256ba782d353d2ebce6590e87d0336d`.
+Both attempts remain incomplete. The supplement was not retried, downgraded,
+substituted, or sent through an API key, PAYG, Console-credit, extra-usage, or
+alternate-provider lane.
 
 ## Post-review release gate
 

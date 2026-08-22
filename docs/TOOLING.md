@@ -162,8 +162,9 @@ contact testers, operate a GUI, or submit an application.
 - Input hashes are checked before and after local processing. Any media or
   model change fails closed. The output directory contains canonical
   `transcript-bundle.json`, text-free `transcription-report.json`, and
-  manifest-last `manifest.json`, all mutually hash-bound and published through
-  an absent-directory hard-link race boundary.
+  human-readable `transcription-density.txt`, plus manifest-last
+  `manifest.json`, all mutually hash-bound and published through an
+  absent-directory hard-link race boundary.
 - A final cue may exceed the decoded PCM duration by at most 5,000 ms to match
   observed whisper.cpp tail padding; only that final end is clipped to the real
   duration. Other invalid or non-monotonic timing fails closed.
@@ -171,13 +172,20 @@ contact testers, operate a GUI, or submit an application.
   PCM has independently been proven byte-zero. Non-silent empty evidence and
   any text over proven silence fail closed. This is a deterministic outcome
   rule, not a semantic claim about transcription accuracy.
-- Four repeated tokens inside one cue invalidate an attempt; three do not.
-  Declared alternatives retry with identical settings. Exhausted takes are
-  reported failed and omitted from the cue bundle without blocking the batch.
-  Reused attempt settings are marked unknown.
-- Voice activity is recorded as off for new attempts. No VAD switch or model
-  path is exposed until a closed, non-rejected public model pin has verified
-  byte length and SHA-256 and the complete pre-decode argument gate is ready.
+- Four repeated tokens inside one cue invalidate an attempt; three do not. A
+  long source below the explicit content-density threshold is separately
+  sparse. Declared alternatives retry with identical settings when either
+  verdict fires, and the same choice policy controls adoption. Exhausted takes
+  are reported failed and omitted from the cue bundle without blocking the
+  batch. Reused attempt settings are marked unknown.
+- Report v2 and its density table record every attempted source's exact
+  duration and content-character count, readable density, active thresholds,
+  settings, selection, rescue／unrescued counts, and shared-alternative warning.
+  Exact report／result v1 directories remain readable.
+- Voice activity is recorded as off for new attempts. The corrected three
+  guards now ship, but no VAD switch or model path is exposed until a closed,
+  non-rejected public model pin has verified byte length and SHA-256 and the
+  complete pre-decode argument gate is ready.
 - The bundle contains local transcript text and media basenames. Keep the full
   result under the same custody as source media. `--json` prints only counts
   and the three exact artifact hashes.
@@ -259,12 +267,14 @@ contact testers, operate a GUI, or submit an application.
   prior manifest hashes. Publication reserves the directory, hard-links
   artifacts, and links the manifest last. No command overwrites or repairs an
   earlier bundle.
-- New prepared v2 bundles contain doctor, sync-map, transcript-bundle,
-  text-free transcription-report, transcription-result-manifest, and string-out
-  artifacts. Existing prepared v1 bundles remain readable. Aligned bundles contain aligned-transcript and paper-workbook
-  artifacts. Finished bundles contain grouping, working-cut, and story-cut
-  artifacts. Manifests contain no timestamp, mutable stage status, absolute
-  path, transcript text, editor text, command arguments, logs, or credentials.
+- New prepared v3 bundles contain doctor, sync-map, transcript-bundle,
+  text-free transcription-report, transcription-result-manifest,
+  human-readable transcription-density, and string-out artifacts. Existing
+  prepared v1 and v2 bundles remain readable. Aligned bundles contain
+  aligned-transcript and paper-workbook artifacts. Finished bundles contain
+  grouping, working-cut, and story-cut artifacts. Manifests contain no
+  timestamp, mutable stage status, absolute path, transcript text, editor text,
+  command arguments, logs, or credentials.
 - `prepare` calls the same retry/degrade transcription orchestrator as
   standalone `transcribe` between doctor／sync and emit. A doctor receipt with
   `supported: false` stops before

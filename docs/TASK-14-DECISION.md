@@ -5,6 +5,12 @@
 **Working branch:** `codex/task13-parity-mechanisms`  
 **Authorized behavioral input:** clean-room handoff `task13-parity-v1`
 
+> **Amended 2026-08-22:** `docs/TASK-14-AMENDMENT-V2-DECISION.md` supersedes
+> this document's two-guard VAD ordering constraint. The corrected constraint
+> requires an in-cue invention guard, a sparse-source guard, and alternative
+> retry／adoption driven by both. The original Task 14 mechanism record remains
+> historical provenance.
+
 ## Decision
 
 Adopt the asymmetric Option A from the Task 13 parity brainstorm and name the
@@ -40,12 +46,13 @@ The default may flip only in a later coherent change after all of these facts
 are simultaneously true:
 
 1. in-cue stutter detection is green;
-2. alternative-source retry and degrade-to-failed are green at both the
-   orchestrator and CLI/run boundaries;
-3. a non-rejected VAD model is present in a closed public registry with exact
+2. sparse-source detection is green for long, low-content sources;
+3. alternative-source retry and adoption are driven by both verdicts and are
+   green at the orchestrator and CLI/run boundaries;
+4. a non-rejected VAD model is present in a closed public registry with exact
    byte length and SHA-256;
-4. model validation happens before media decode;
-5. `--vad`, `--no-vad`, contradictory switches, no-audio use, and model-choice
+5. model validation happens before media decode;
+6. `--vad`, `--no-vad`, contradictory switches, no-audio use, and model-choice
    argument rules are covered by wrapper-level tests.
 
 Until then the public report states voice activity as `off` for new attempts

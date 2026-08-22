@@ -125,13 +125,13 @@ venv/bin/tritrack transcribe \
 The model is caller-owned and is never bundled or downloaded by TriTrack. The
 command normalizes each source to temporary mono 16 kHz PCM, runs the installed
 `whisper-cli` once per take with the fixed
-`whisper-cpp-cpu-no-fallback-v1` profile, and creates one absent three-entry
+`whisper-cpp-cpu-no-fallback-v1` profile, and creates one absent four-entry
 result directory: `transcript-bundle.json`, text-free
-`transcription-report.json`, and manifest-last `manifest.json`. Media basenames
-must be unique, every path must be absolute, and the two- or three-letter
-language code must be explicit. CPU-only decoding removes the local GPU backend
-as a profile variable; it does not claim bit-identical inference across engine
-versions, models, or machines.
+`transcription-report.json`, human-readable `transcription-density.txt`, and
+manifest-last `manifest.json`. Media basenames must be unique, every path must
+be absolute, and the two- or three-letter language code must be explicit.
+CPU-only decoding removes the local GPU backend as a profile variable; it does
+not claim bit-identical inference across engine versions, models, or machines.
 
 Recognized cues are NFC-normalized, single-spaced, ordered, and bounded to
 integer milliseconds. A bounded final whisper.cpp timestamp pad is clipped to
@@ -141,23 +141,33 @@ independently been proven all-zero. Non-silent empty output, text over proven
 silence, malformed timing, leaked control tokens, or repeated structural
 artifacts invalidate that attempt. Four identical tokens inside one cue are
 also rejected; three are allowed. A declared synchronized alternative is
-retried under the same settings, and a take with no usable source is reported
-failed without blocking other takes. `--reuse-from` accepts one exact prior
-result; reused settings are recorded as unknown rather than relabelled with
-current values. No prompt, translation, provider call, upload, or network
-access is part of this command.
+retried under the same settings when either the invention guard or the
+sparse-source guard fires. One shared choice policy also decides which source
+the consumer reads, so a successful retry cannot leave the sparse primary
+selected. A sparse primary survives when no better source exists; invalid text
+never does. A take with no usable source is reported failed without blocking
+other takes. `--reuse-from` accepts one exact prior v1 or v2 result; reused
+settings are recorded as unknown rather than relabelled with current values.
+No prompt, translation, provider call, upload, or network access is part of
+this command.
 
 The bundle contains transcript text and source basenames, so keep the complete
 result directory under the same local custody as the media. The report and
-manifest contain no cue text or local path. `--json` prints only path-free
-counts and the three exact hashes; it does not print transcript text.
+manifest contain no cue text or local path. The density table records every
+attempt's exact character and duration measurements, the active threshold,
+the selected source, and any shared-alternative warning, sorted by density.
+Its bytes are bound by the result manifest. `--json` prints only path-free
+counts and the three existing authority hashes; it does not print transcript
+text.
 
 Voice-activity detection remains off and no VAD switch or caller-supplied VAD
-model path is exposed. The in-cue detector and retry are prerequisites for a
-future default change, but the default stays off until a non-rejected public
-model is in a closed registry with verified byte length and SHA-256 and the
-complete switch／validation boundary ships coherently. This makes no
-VAD-default completion or recognition-accuracy claim.
+model path is exposed. The in-cue detector, sparse-source verdict, and
+alternative retry driven by both are prerequisites for a future default
+change. Those three guards now ship, but they do not authorize a default flip:
+the default stays off until a non-rejected public model is in a closed registry
+with verified byte length and SHA-256 and the complete switch／validation
+boundary ships coherently. This makes no VAD-default completion or
+recognition-accuracy claim.
 
 Promote strict cue-addressed revisions without changing source timing:
 
@@ -263,10 +273,10 @@ title binding, caller-owned event／project names, a safe run ID, and one absent
 output directory. It runs doctor → sync → transcribe → string-out and publishes
 exactly `doctor.json`, `sync-map.json`, `transcript-bundle.json`,
 `transcription-report.json`, `transcription-result-manifest.json`,
-`string-out.fcpxml`, and `run-manifest.json`. New prepared runs use
-`run-manifest-v2`; existing v1 bundles remain readable. Synchronized group
-members become ordered alternatives through the same orchestrator used by the
-standalone command.
+`transcription-density.txt`, `string-out.fcpxml`, and `run-manifest.json`. New
+prepared runs use `run-manifest-v3`; existing v1 and v2 bundles remain
+readable. Synchronized group members become ordered alternatives through the
+same orchestrator used by the standalone command.
 
 Pause for the editor to provide one strict `text-revision-v1` bound to the
 exact transcript bytes. An empty `takes: []` is accepted only as explicit

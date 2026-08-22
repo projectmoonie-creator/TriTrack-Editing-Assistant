@@ -998,7 +998,12 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(
                 {entry.name for entry in output.iterdir()},
-                {"manifest.json", "transcript-bundle.json", "transcription-report.json"},
+                {
+                    "manifest.json",
+                    "transcript-bundle.json",
+                    "transcription-report.json",
+                    "transcription-density.txt",
+                },
             )
             summary = json.loads(completed.stdout)
             self.assertEqual(summary["takeCount"], 3)

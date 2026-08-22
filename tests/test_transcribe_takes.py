@@ -391,6 +391,41 @@ class LocalTranscriptionWorkflowTest(unittest.TestCase):
             """,
         )
 
+    def test_source_result_carries_exact_audio_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media = root / "invented.mov"
+            model = root / "invented-model.bin"
+            media.write_bytes(b"invented source")
+            model.write_bytes(b"invented model")
+            ffmpeg = self.write_ffmpeg(root, sample=1)
+            whisper = self.write_whisper(
+                root,
+                transcription=[
+                    {
+                        "offsets": {"from": 0, "to": 500},
+                        "text": "Invented duration cue.",
+                    }
+                ],
+            )
+
+            result = transcribe_takes.transcribe_source(
+                media,
+                take_id=media.name,
+                source_sha256=transcribe_takes._sha256_file(media),
+                model_path=model,
+                model_sha256=transcribe_takes._sha256_file(model),
+                language="zh",
+                ffmpeg_executable=str(ffmpeg),
+                whisper_executable=str(whisper),
+            )
+
+        self.assertTrue(
+            hasattr(result, "duration_ms"),
+            "decoded source duration is not carried to orchestration",
+        )
+        self.assertEqual(result.duration_ms, 1000)
+
     def test_single_pass_publishes_stable_path_free_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

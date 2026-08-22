@@ -230,6 +230,29 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertNotIn("`validate` remains planned", status)
         self.assertNotIn("`tritrack run` | planned", readme)
 
+    def test_task_14_v2_amendment_is_hash_bound(self) -> None:
+        decision_path = ROOT / "docs" / "TASK-14-AMENDMENT-V2-DECISION.md"
+        self.assertTrue(decision_path.is_file(), "v2 amendment decision is missing")
+        decision = decision_path.read_text(encoding="utf-8")
+
+        for required in (
+            "task13-parity-v2",
+            "amends: `task13-parity-v1`",
+            "contracts/voice-activity-default.md",
+            "1c9334290e75d1cc70a31b4b86cc273fcc59b2ae",
+            "9f03607e571d17ef13e715b8ca845630280c59cdce12c91a8d4b038daaaf454f",
+            "406890cc11fd9fe5b0c808806ca8d55fcc120ea2972c57e52ee73ecd3ab0cd15",
+            "da42b2457af120d0a4bee380ec42fefde1b7ef8a226df12ab138cb7700bc4f4d",
+            "499cd8e043eb289ecc7ac70b0306d2c5bacd6ecc0af396c046144c1902148f72",
+            "ea8299914d2601133ca10aded54662c0475272003dbd89fca986da6f670489a8",
+            "c10abf9afcbcbe2d580dfb4bcdb79e80ff464b3c06c0a48e24c8284e20b23c9e",
+            "in-cue repetition detection",
+            "sparse-source verdict",
+            "alternative-source retry",
+            "Voice-activity detection remains off",
+        ):
+            self.assertIn(required, decision)
+
     def test_task_13_documents_generic_authority_and_downstream_seam(
         self,
     ) -> None:
