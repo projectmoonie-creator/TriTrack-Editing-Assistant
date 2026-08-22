@@ -645,7 +645,7 @@ Before any Task 14 production code or schema was added, the first acceptance
 batch ran with the isolated worktree source explicitly first on `PYTHONPATH`:
 
 ```bash
-PYTHONPATH=src /Users/hsin-hsinyuan/Documents/Claude/Projects/TriTrack-Editing-Assistant/venv/bin/python -m unittest tests.test_transcript_anomaly tests.test_pair_selection tests.test_transcription_result tests.test_task14_relay_projection tests.test_cli.Task14CommandBoundaryRedTest -v
+PYTHONPATH=src venv/bin/python -m unittest tests.test_transcript_anomaly tests.test_pair_selection tests.test_transcription_result tests.test_task14_relay_projection tests.test_cli.Task14CommandBoundaryRedTest -v
 ```
 
 Observed result: **21 tests, 21 failures, 0 errors**.
