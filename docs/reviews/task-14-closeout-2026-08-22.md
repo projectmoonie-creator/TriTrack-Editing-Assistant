@@ -48,6 +48,14 @@ The frozen closeout packet SHA-256 is
 `c9c4efb8281386522f751e59c2949263b8394317dd658199650b39105dfaffae`.
 Both external lanes received those exact bytes once.
 
+Packet erratum: its `Exact public base` line incorrectly expanded the correct
+short review range `d952c1f` as a non-existent full object name. The
+hash-bound handoff identity and Git both record the authoritative public base
+as `d952c1fe41563c38c7859250b3f95b3d93e8929f`. The exact review target and
+short `d952c1f..e4e8fc2` range in the packet were correct. The reviewed packet
+bytes remain unchanged so its hash and both attempt ledgers stay auditable;
+this erratum supersedes only that mistyped expansion.
+
 Gemini requested, observed, and completed `gemini-3.7-flash`; wrapper usage was
 2,974 input, 1,418 output, and 5,581 total tokens. It returned `NO FINDINGS`,
 but its inspection record named non-existent schema paths without the actual
