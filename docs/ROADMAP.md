@@ -41,11 +41,24 @@ here.
   exclusive v1 downstream seam; an out-of-tree standard-library consumer and
   fresh wheel-only `downstreamSeam` gate prove the public engine remains the
   generic authority without adding a Python API or private integration.
+- Task 14: clean-room parity prerequisites add in-cue anomaly rejection,
+  same-settings alternative-source retry and degrade-to-failed reporting,
+  text-free transcription provenance, drift-prior／new-coverage temporal relay,
+  explicit audio-master policy, `sync-map-v2`, and `run-manifest-v2`
+  propagation through both deterministic FCPXML paths. Published v1 contracts
+  remain readable and `transcript-bundle-v1` remains cue authority.
 
 ## Alpha-candidate sequence
 
-Tasks 12 and 13 are complete. `STATUS.md` owns the exact current candidate,
-verification, review, and remote-custody state.
+Tasks 12 and 13 are complete. Task 14 is the current public candidate;
+`STATUS.md` owns its exact verification, review, and remote-custody state.
+
+Task 14 deliberately does not enable voice-activity detection. Its anomaly and
+retry mechanisms are necessary prerequisites, not permission to invent a model
+pin. A later default flip requires a closed non-rejected public VAD model entry
+with verified byte length and SHA-256 plus coherent pre-decode validation and
+wrapper-level switch tests. This roadmap makes no VAD-default completion,
+recognition-accuracy, or simultaneous N-camera claim.
 
 ## Outward-action boundary
 

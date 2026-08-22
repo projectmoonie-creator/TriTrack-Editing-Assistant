@@ -382,7 +382,7 @@ def _validate_transcription_authority(
 ) -> None:
     names = {"transcriptBundle", "transcriptionReport", "transcriptionResult"}
     present = names.intersection(artifacts)
-    if not present:
+    if not present or present == {"transcriptBundle"}:
         return
     if present != names:
         raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID")

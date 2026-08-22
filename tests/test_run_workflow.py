@@ -259,6 +259,9 @@ class RunManifestTest(unittest.TestCase):
             sha256(schema_path.read_bytes()),
             "f2cc085ddff1db4a83074de2d8f132823136a5689a98aa244e1278e1920242bf",
         )
+        run_workflow._validate_transcription_authority(
+            {"transcriptBundle": b"legacy-v1-authority"}
+        )
 
     def test_rejects_unsafe_duplicate_and_phase_drift(self) -> None:
         duplicate = invented_sources()

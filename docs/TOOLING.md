@@ -110,13 +110,15 @@ contact testers, operate a GUI, or submit an application.
 - `tritrack sync --help` is the command authority for Task 5 flags.
 - Media metadata and mono float audio are read through `ffprobe` and `ffmpeg`
   using the public bounded-process wrapper. No shell command is constructed.
-- The command creates one absent `sync-map-v1` JSON path atomically and never
-  rewrites source media or an existing output path.
+- The command creates one absent `sync-map-v2` JSON path atomically and never
+  rewrites source media or an existing output path. Existing v1 maps remain
+  readable. V2 carries drift-prior acceptance, new-coverage relay sources, and
+  an explicit audio master; it does not claim simultaneous N-camera support.
 
 ## Local FCPXML emission
 
 - `tritrack emit --help` is the command authority for Task 6 flags.
-- The command consumes one strict `sync-map-v1`, repeatable local camera A/B
+- The command consumes one strict `sync-map-v1` or `sync-map-v2`, repeatable local camera A/B
   paths, the exact public compatibility profile, the public Basic Title
   binding, and caller-owned event and project names.
 - Source duration, video dimensions, frame rate, Rec. 709 fields, and stereo
@@ -140,9 +142,11 @@ contact testers, operate a GUI, or submit an application.
 ## Local transcription
 
 - `tritrack transcribe --help` is the command authority for Task 7 flags.
-- The caller supplies repeatable local media paths, one readable local
+- The caller supplies repeatable absolute local media paths, optional explicit
+  `TAKE_ID=ABSOLUTE_PATH` alternatives, one readable absolute caller-owned
   whisper.cpp model, an explicit lowercase two- or three-letter language code,
-  and one absent output path. TriTrack does not bundle or download a model.
+  and one absent absolute result directory. TriTrack does not bundle or
+  download a model. One exact prior result may be supplied with `--reuse-from`.
 - The fixed `whisper-cpp-cpu-no-fallback-v1` profile normalizes each source to
   temporary mono 16 kHz signed 16-bit PCM through bounded FFmpeg, then invokes
   `whisper-cli` exactly once with zero temperature, zero temperature increment,
@@ -156,8 +160,10 @@ contact testers, operate a GUI, or submit an application.
   identities, stable cue IDs, and integer-millisecond cue timing. It records no
   absolute paths, temporary paths, logs, execution duration, or credentials.
 - Input hashes are checked before and after local processing. Any media or
-  model change fails closed. Output publication uses the same absent-path,
-  temporary-file, hard-link race boundary as synchronization and FCPXML output.
+  model change fails closed. The output directory contains canonical
+  `transcript-bundle.json`, text-free `transcription-report.json`, and
+  manifest-last `manifest.json`, all mutually hash-bound and published through
+  an absent-directory hard-link race boundary.
 - A final cue may exceed the decoded PCM duration by at most 5,000 ms to match
   observed whisper.cpp tail padding; only that final end is clipped to the real
   duration. Other invalid or non-monotonic timing fails closed.
@@ -165,9 +171,16 @@ contact testers, operate a GUI, or submit an application.
   PCM has independently been proven byte-zero. Non-silent empty evidence and
   any text over proven silence fail closed. This is a deterministic outcome
   rule, not a semantic claim about transcription accuracy.
-- The bundle contains local transcript text and media basenames. Keep it under
-  the same custody as source media. `--json` prints only counts and the bundle
-  SHA-256.
+- Four repeated tokens inside one cue invalidate an attempt; three do not.
+  Declared alternatives retry with identical settings. Exhausted takes are
+  reported failed and omitted from the cue bundle without blocking the batch.
+  Reused attempt settings are marked unknown.
+- Voice activity is recorded as off for new attempts. No VAD switch or model
+  path is exposed until a closed, non-rejected public model pin has verified
+  byte length and SHA-256 and the complete pre-decode argument gate is ready.
+- The bundle contains local transcript text and media basenames. Keep the full
+  result under the same custody as source media. `--json` prints only counts
+  and the three exact artifact hashes.
 
 ## Local text alignment
 
@@ -246,13 +259,15 @@ contact testers, operate a GUI, or submit an application.
   prior manifest hashes. Publication reserves the directory, hard-links
   artifacts, and links the manifest last. No command overwrites or repairs an
   earlier bundle.
-- Prepared bundles contain doctor, sync-map, transcript-bundle, and string-out
-  artifacts. Aligned bundles contain aligned-transcript and paper-workbook
+- New prepared v2 bundles contain doctor, sync-map, transcript-bundle,
+  text-free transcription-report, transcription-result-manifest, and string-out
+  artifacts. Existing prepared v1 bundles remain readable. Aligned bundles contain aligned-transcript and paper-workbook
   artifacts. Finished bundles contain grouping, working-cut, and story-cut
   artifacts. Manifests contain no timestamp, mutable stage status, absolute
   path, transcript text, editor text, command arguments, logs, or credentials.
-- `prepare` calls the existing doctor → sync → transcribe → emit Python
-  functions directly. A doctor receipt with `supported: false` stops before
+- `prepare` calls the same retry/degrade transcription orchestrator as
+  standalone `transcribe` between doctor／sync and emit. A doctor receipt with
+  `supported: false` stops before
   processing. Declared media basenames are globally unique, transcription
   inputs are a strict subset, and media plus model hashes are rechecked before
   publication.

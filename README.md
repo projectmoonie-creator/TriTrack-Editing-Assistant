@@ -75,8 +75,12 @@ venv/bin/tritrack sync \
 
 The output path and its parent directory must already be absent and present,
 respectively. The command reads local metadata and audio through bounded
-`ffprobe`/`ffmpeg` argv calls, validates `sync-map-v1`, and publishes the map
-atomically without modifying source media or overwriting an existing result.
+`ffprobe`/`ffmpeg` argv calls, publishes strict `sync-map-v2`, and never modifies
+source media or overwrites an existing result. V2 keeps measured correlation
+ahead of clock-drift evidence, retains only relay sources that add timeline
+coverage, and records an explicit audio master. Existing `sync-map-v1`
+artifacts remain readable. This is temporal relay support, not a simultaneous
+N-camera claim.
 
 Emit a deterministic string-out from that strict map with the same repeatable
 source set:
@@ -109,22 +113,25 @@ source:
 
 ```bash
 venv/bin/tritrack transcribe \
-  --media A-001.MP4 \
-  --media A-002.MP4 \
-  --model models/ggml-model.bin \
+  --media /absolute/media/A-001.MP4 \
+  --media /absolute/media/A-002.MP4 \
+  --alternative-source A-001.MP4=/absolute/media/B-001.MP4 \
+  --model /absolute/models/ggml-model.bin \
   --language zh \
-  --output results/transcript-bundle.json \
+  --output /absolute/results/transcription-result \
   --json
 ```
 
 The model is caller-owned and is never bundled or downloaded by TriTrack. The
 command normalizes each source to temporary mono 16 kHz PCM, runs the installed
 `whisper-cli` once per take with the fixed
-`whisper-cpp-cpu-no-fallback-v1` profile, and creates one absent strict
-`transcript-bundle-v1` path atomically. Media basenames must be unique and the
-two- or three-letter language code must be explicit. CPU-only decoding removes
-the local GPU backend as a profile variable; it does not claim bit-identical
-inference across engine versions, models, or machines.
+`whisper-cpp-cpu-no-fallback-v1` profile, and creates one absent three-entry
+result directory: `transcript-bundle.json`, text-free
+`transcription-report.json`, and manifest-last `manifest.json`. Media basenames
+must be unique, every path must be absolute, and the two- or three-letter
+language code must be explicit. CPU-only decoding removes the local GPU backend
+as a profile variable; it does not claim bit-identical inference across engine
+versions, models, or machines.
 
 Recognized cues are NFC-normalized, single-spaced, ordered, and bounded to
 integer milliseconds. A bounded final whisper.cpp timestamp pad is clipped to
@@ -132,12 +139,25 @@ the real PCM duration. Exact digital silence may produce an empty take; the
 observed `[BLANK_AUDIO]` engine sentinel is discarded only after the PCM has
 independently been proven all-zero. Non-silent empty output, text over proven
 silence, malformed timing, leaked control tokens, or repeated structural
-artifacts fail closed without publishing. No retry ladder, prompt, translation,
-provider call, upload, or network access is part of this command.
+artifacts invalidate that attempt. Four identical tokens inside one cue are
+also rejected; three are allowed. A declared synchronized alternative is
+retried under the same settings, and a take with no usable source is reported
+failed without blocking other takes. `--reuse-from` accepts one exact prior
+result; reused settings are recorded as unknown rather than relabelled with
+current values. No prompt, translation, provider call, upload, or network
+access is part of this command.
 
-The bundle contains transcript text and source basenames, so keep it under the
-same local custody as the media. `--json` prints only a path-free completion
-summary and bundle hash; it does not print transcript text.
+The bundle contains transcript text and source basenames, so keep the complete
+result directory under the same local custody as the media. The report and
+manifest contain no cue text or local path. `--json` prints only path-free
+counts and the three exact hashes; it does not print transcript text.
+
+Voice-activity detection remains off and no VAD switch or caller-supplied VAD
+model path is exposed. The in-cue detector and retry are prerequisites for a
+future default change, but the default stays off until a non-rejected public
+model is in a closed registry with verified byte length and SHA-256 and the
+complete switch／validation boundary ships coherently. This makes no
+VAD-default completion or recognition-accuracy claim.
 
 Promote strict cue-addressed revisions without changing source timing:
 
@@ -242,7 +262,11 @@ subset, the caller-owned local model, explicit language, public profile and
 title binding, caller-owned event／project names, a safe run ID, and one absent
 output directory. It runs doctor → sync → transcribe → string-out and publishes
 exactly `doctor.json`, `sync-map.json`, `transcript-bundle.json`,
-`string-out.fcpxml`, and `run-manifest.json`.
+`transcription-report.json`, `transcription-result-manifest.json`,
+`string-out.fcpxml`, and `run-manifest.json`. New prepared runs use
+`run-manifest-v2`; existing v1 bundles remain readable. Synchronized group
+members become ordered alternatives through the same orchestrator used by the
+standalone command.
 
 Pause for the editor to provide one strict `text-revision-v1` bound to the
 exact transcript bytes. An empty `takes: []` is accepted only as explicit
