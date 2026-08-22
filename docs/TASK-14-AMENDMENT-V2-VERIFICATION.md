@@ -2,6 +2,9 @@
 
 Verification date: 2026-08-22
 
+Exact post-review implementation target:
+`f8b77e65ac0a51d19efbda159d7441cb3be870e4`
+
 ## Scope and intake
 
 This public fix-forward consumes only the hash-bound clean-room amendment
@@ -63,6 +66,30 @@ density bytes. Each counterexample received a dedicated RED test before its
 bounded fix. The corrected focused suites passed 92 tests, followed by a
 complete 344-test pass; Ruff, compilation, diff hygiene, and the final clean
 release gate are rerun at closeout.
+
+## Amendment review provenance and adjudication
+
+The frozen amendment review packet targets exact implementation commit
+`7232267a236cbb35f210d5088cb02ca69201d473` and has SHA-256
+`f6c530b5886a13b1b14284d636ec8457e3c9545e91aeb4e82c6013deae9efc55`.
+It was not rewritten after review findings appeared.
+
+Gemini dynamically requested, observed, and completed `gemini-3.7-flash` and
+returned `NO FINDINGS`. Because the later source-grounded review reproduced six
+counterexamples, that result remains a completed packet-level advisory and is
+not used to establish source correctness. Its report and status ledgers are
+preserved under `docs/reviews/`; their SHA-256 values are respectively
+`24dc45a8e644cad4af876a69f0ce09923ec1fa61da3c3f0b7d60a35df2481686`
+and `9adb29a313e3c9f89293c2da3d6523578e1a5a25208a1751e4664135f40b5b6e`.
+
+The independent read-only Codex review requested, observed, and completed
+`gpt-5.6-sol` with `xhigh` reasoning in session
+`01a02963-37df-7f12-88db-68dba69e255f`. It returned six required findings and
+no optional notes. All six were accepted and fixed at the exact target above;
+their counterexamples, RED／GREEN disposition, and bounded corrections are
+recorded in
+`docs/reviews/task-14-amendment-v2-codex-2026-08-22.md`, SHA-256
+`2a40d47a55a3319a72ef9a610846969b950fec55c8449a36f73a6c35bf37b321`.
 
 ## Claude convergence supplement
 
