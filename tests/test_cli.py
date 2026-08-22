@@ -1275,5 +1275,63 @@ class ValidateDocumentationTest(unittest.TestCase):
             self.assertNotIn("Python 3.12 or newer", text, relative)
 
 
+class Task14CommandBoundaryRedTest(unittest.TestCase):
+    def parse_without_exit(self, arguments: list[str]):
+        standard_error = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(standard_error):
+                return cli.build_parser().parse_args(arguments)
+        except (SystemExit, cli.CliUsageError) as error:
+            code = error.code if isinstance(error, SystemExit) else str(error)
+            self.fail(
+                "Task 14 command boundary is not implemented: "
+                f"exit={code}, stderr={standard_error.getvalue()!r}"
+            )
+
+    def test_transcribe_accepts_explicit_alternative_and_reuse_inputs(self) -> None:
+        arguments = self.parse_without_exit(
+            [
+                "transcribe",
+                "--media",
+                "/invented/primary.mov",
+                "--alternative-source",
+                "primary.mov=/invented/alternative.mov",
+                "--reuse-from",
+                "/invented/prior-result",
+                "--model",
+                "/invented/model.bin",
+                "--language",
+                "zh",
+                "--output",
+                "/invented/new-result",
+            ]
+        )
+
+        self.assertEqual(
+            arguments.alternative_source,
+            ["primary.mov=/invented/alternative.mov"],
+        )
+        self.assertEqual(arguments.reuse_from, Path("/invented/prior-result"))
+
+    def test_sync_accepts_forced_audio_master(self) -> None:
+        arguments = self.parse_without_exit(
+            [
+                "sync",
+                "--camera-a",
+                "anchor.mov=/invented/anchor.mov",
+                "--camera-b",
+                "relay.mov=/invented/relay.mov",
+                "--audio-master",
+                "B",
+                "--profile",
+                "uhd-2997-ndf-fcpxml-1.14",
+                "--output",
+                "/invented/sync-map.json",
+            ]
+        )
+
+        self.assertEqual(arguments.audio_master, "B")
+
+
 if __name__ == "__main__":
     unittest.main()
