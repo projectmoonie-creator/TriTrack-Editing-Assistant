@@ -24,6 +24,7 @@ CONTRACT_NAMES = frozenset(
         "working-cut-v1",
         "title-binding-v1",
         "run-manifest-v1",
+        "run-manifest-v2",
         "provider-receipt-v1",
     }
 )

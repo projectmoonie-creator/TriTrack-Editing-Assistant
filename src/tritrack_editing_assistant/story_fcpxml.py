@@ -780,6 +780,38 @@ def _load_artifact(path: Path, *, contract: str, code: str) -> _LoadedArtifact:
     )
 
 
+def _load_sync_artifact(path: Path, *, code: str) -> _LoadedArtifact:
+    selected = Path(path)
+    encoded = _read_regular_bytes(selected, code)
+    try:
+        payload = json.loads(
+            encoded.decode("utf-8", errors="strict"), parse_float=Decimal
+        )
+        if not isinstance(payload, dict):
+            raise TypeError
+        contract = contracts.contract_name_for_schema_version(
+            payload.get("schemaVersion")
+        )
+        if contract not in {"sync-map-v1", "sync-map-v2"}:
+            raise ValueError
+        contracts.validate_contract(contract, payload)
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        ValidationError,
+    ) as error:
+        raise ValueError(code) from error
+    return _LoadedArtifact(
+        path=selected,
+        payload=payload,
+        encoded=encoded,
+        sha256=hashlib.sha256(encoded).hexdigest(),
+        invalid_code=code,
+    )
+
+
 def _verify_artifact(artifact: _LoadedArtifact) -> None:
     try:
         encoded = _read_regular_bytes(artifact.path, artifact.invalid_code)
@@ -832,8 +864,8 @@ def emit_story_and_publish(
     destination = process.require_absent_output(output_path)
     if not destination.parent.is_dir():
         raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
-    sync_map = _load_artifact(
-        sync_map_path, contract="sync-map-v1", code="TRITRACK_STORY_SYNC_INVALID"
+    sync_map = _load_sync_artifact(
+        sync_map_path, code="TRITRACK_STORY_SYNC_INVALID"
     )
     aligned = _load_artifact(
         aligned_path,

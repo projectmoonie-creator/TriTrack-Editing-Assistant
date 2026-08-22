@@ -537,24 +537,34 @@ class PrepareAlignTransitionTest(unittest.TestCase):
     @staticmethod
     def sync_payload() -> dict[str, object]:
         return {
-            "schemaVersion": "tritrack.sync-map/v1",
+            "schemaVersion": "tritrack.sync-map/v2",
             "profileId": "uhd-2997-ndf-fcpxml-1.14",
-            "pairs": [
+            "driftPrior": None,
+            "groups": [
                 {
-                    "pairId": "pair-001",
-                    "mediaA": "A-001.MP4",
-                    "mediaB": "B-001.MP4",
-                    "offsetBFromASeconds": 1.0,
-                    "confidence": 20.0,
-                    "overlapSeconds": 8.0,
+                    "groupId": "group-001",
+                    "anchor": {
+                        "camera": "A",
+                        "mediaId": "A-001.MP4",
+                        "durationSeconds": 10.0,
+                        "startedAt": None,
+                    },
+                    "sources": [
+                        {
+                            "camera": "B",
+                            "mediaId": "B-001.MP4",
+                            "offsetFromAnchorSeconds": 1.0,
+                            "durationSeconds": 8.0,
+                            "confidence": 20.0,
+                            "overlapSeconds": 8.0,
+                            "match": "correlation",
+                            "startedAt": None,
+                        }
+                    ],
                     "audioMaster": "A",
-                    "durationASeconds": 10.0,
-                    "durationBSeconds": 8.0,
-                    "startedAt": None,
                 }
             ],
-            "singleA": [],
-            "singleB": [],
+            "singles": [],
             "warnings": [],
         }
 
@@ -584,38 +594,48 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             )
             return payload
 
-        def fake_transcribe(media_paths, *, model_path, language, output_path, **_):
+        def fake_transcribe(
+            media_paths, *, alternative_paths, model_path, language, **_
+        ):
             calls.append("transcribe")
             source = Path(media_paths[0])
-            bundle = {
-                "schemaVersion": "tritrack.transcript-bundle/v1",
-                "profileId": "whisper-cpp-cpu-no-fallback-v1",
-                "language": language,
-                "modelSha256": sha256(Path(model_path).read_bytes()),
-                "engine": {
-                    "name": "whisper-cli",
-                    "version": "whisper.cpp version: invented",
-                },
-                "takes": [
-                    {
-                        "takeId": source.name,
-                        "sourceSha256": sha256(source.read_bytes()),
-                        "status": "completed",
-                        "cues": [
+            self.assertEqual(
+                alternative_paths,
+                {source.name: (source.with_name("B-001.MP4"),)},
+            )
+            source_hash = sha256(source.read_bytes())
+            settings = transcription_result.TranscriptionSettings(
+                language=language,
+                recognition_model_sha256=sha256(Path(model_path).read_bytes()),
+                voice_activity="off",
+                voice_activity_model=None,
+            )
+            request = transcription_result.TranscriptionRequest(
+                take_id=source.name,
+                sources=(
+                    transcription_result.TranscriptionSource(source, source_hash),
+                ),
+            )
+            return transcription_result.build_transcription_result(
+                [request],
+                settings=settings,
+                engine_version="whisper.cpp version: invented",
+                decoder=lambda _source, take_id, _settings: (
+                    transcribe_takes.TranscribedTake(
+                        take_id=take_id,
+                        source_sha256=source_hash,
+                        status="completed",
+                        cues=(
                             {
                                 "cueId": "cue-000001",
                                 "startMs": 0,
                                 "endMs": 500,
                                 "text": "Invented words.",
-                            }
-                        ],
-                    }
-                ],
-            }
-            output_path.write_text(
-                transcribe_takes.encode_transcript_bundle(bundle), encoding="utf-8"
+                            },
+                        ),
+                    )
+                ),
             )
-            return bundle
 
         def fake_emit(
             camera_a,
@@ -669,8 +689,8 @@ class PrepareAlignTransitionTest(unittest.TestCase):
                 sync_scan, "synchronize_and_publish", side_effect=fake_sync
             ),
             mock.patch.object(
-                transcribe_takes,
-                "transcribe_and_publish",
+                transcription_result,
+                "transcribe_local_result",
                 side_effect=fake_transcribe,
             ),
             mock.patch.object(
@@ -830,8 +850,8 @@ class PrepareAlignTransitionTest(unittest.TestCase):
                     sync_scan, "synchronize_and_publish", side_effect=fakes[1]
                 ),
                 mock.patch.object(
-                    transcribe_takes,
-                    "transcribe_and_publish",
+                    transcription_result,
+                    "transcribe_local_result",
                     side_effect=fakes[2],
                 ),
                 mock.patch.object(

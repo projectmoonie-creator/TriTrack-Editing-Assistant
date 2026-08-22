@@ -499,22 +499,18 @@ def _require_absolute(path: Path) -> Path:
     return selected
 
 
-def transcribe_and_publish_result(
+def transcribe_local_result(
     primary_paths: Sequence[Path],
     *,
     alternative_paths: Mapping[str, Sequence[Path]] | None,
     model_path: Path,
     language: str,
-    output_dir: Path,
     reuse_from: Path | None = None,
     ffmpeg_executable: str = "ffmpeg",
     whisper_executable: str = "whisper-cli",
 ) -> BuiltTranscriptionResult:
-    """Run the local decoder through retry/degrade and publish one result."""
+    """Run the local decoder through retry/degrade without publishing paths."""
 
-    destination = process.require_absent_output(_require_absolute(output_dir))
-    if not destination.parent.is_dir():
-        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
     if not primary_paths:
         raise ValueError("TRITRACK_TRANSCRIPT_MEDIA_REQUIRED")
     if not isinstance(language, str) or _LANGUAGE.fullmatch(language) is None:
@@ -604,5 +600,33 @@ def transcribe_and_publish_result(
         )
     ):
         raise ValueError("TRITRACK_TRANSCRIPT_INPUT_CHANGED")
+    return result
+
+
+def transcribe_and_publish_result(
+    primary_paths: Sequence[Path],
+    *,
+    alternative_paths: Mapping[str, Sequence[Path]] | None,
+    model_path: Path,
+    language: str,
+    output_dir: Path,
+    reuse_from: Path | None = None,
+    ffmpeg_executable: str = "ffmpeg",
+    whisper_executable: str = "whisper-cli",
+) -> BuiltTranscriptionResult:
+    """Run the shared local orchestrator and publish one immutable result."""
+
+    destination = process.require_absent_output(_require_absolute(output_dir))
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    result = transcribe_local_result(
+        primary_paths,
+        alternative_paths=alternative_paths,
+        model_path=model_path,
+        language=language,
+        reuse_from=reuse_from,
+        ffmpeg_executable=ffmpeg_executable,
+        whisper_executable=whisper_executable,
+    )
     publish_transcription_result(destination, result)
     return result

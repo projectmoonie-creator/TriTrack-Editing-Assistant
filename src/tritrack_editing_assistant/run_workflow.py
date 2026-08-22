@@ -27,7 +27,7 @@ from . import (
     process,
     story_fcpxml,
     sync_scan,
-    transcribe_takes,
+    transcription_result,
 )
 
 MANIFEST_FILE_NAME = "run-manifest.json"
@@ -42,6 +42,7 @@ class PhaseSpec:
     chain_length: int
     artifacts: tuple[tuple[str, str], ...]
     stages: tuple[str, ...]
+    stage_outputs: tuple[tuple[str, tuple[str, ...]], ...]
 
 
 PHASE_SPECS = {
@@ -55,6 +56,12 @@ PHASE_SPECS = {
             ("stringOut", "string-out.fcpxml"),
         ),
         stages=("doctor", "sync", "transcribe", "emit"),
+        stage_outputs=(
+            ("doctor", ("doctorReceipt",)),
+            ("sync", ("syncMap",)),
+            ("transcribe", ("transcriptBundle",)),
+            ("emit", ("stringOut",)),
+        ),
     ),
     "aligned": PhaseSpec(
         next_action="edit-paper-workbook",
@@ -64,6 +71,10 @@ PHASE_SPECS = {
             ("paperWorkbook", "paper-edit.xlsx"),
         ),
         stages=("align", "paper"),
+        stage_outputs=(
+            ("align", ("alignedTranscript",)),
+            ("paper", ("paperWorkbook",)),
+        ),
     ),
     "finished": PhaseSpec(
         next_action="complete",
@@ -74,8 +85,49 @@ PHASE_SPECS = {
             ("storyCut", "story-cut.fcpxml"),
         ),
         stages=("paper", "organize", "emit"),
+        stage_outputs=(
+            ("paper", ("grouping",)),
+            ("organize", ("workingCut",)),
+            ("emit", ("storyCut",)),
+        ),
     ),
 }
+
+_V2_PREPARED_SPEC = PhaseSpec(
+    next_action="provide-revision",
+    chain_length=0,
+    artifacts=(
+        ("doctorReceipt", "doctor.json"),
+        ("syncMap", "sync-map.json"),
+        ("transcriptBundle", "transcript-bundle.json"),
+        ("transcriptionReport", "transcription-report.json"),
+        ("transcriptionResult", "transcription-result-manifest.json"),
+        ("stringOut", "string-out.fcpxml"),
+    ),
+    stages=("doctor", "sync", "transcribe", "emit"),
+    stage_outputs=(
+        ("doctor", ("doctorReceipt",)),
+        ("sync", ("syncMap",)),
+        (
+            "transcribe",
+            ("transcriptBundle", "transcriptionReport", "transcriptionResult"),
+        ),
+        ("emit", ("stringOut",)),
+    ),
+)
+_RUN_MANIFEST_V1 = "tritrack.run-manifest/v1"
+_RUN_MANIFEST_V2 = "tritrack.run-manifest/v2"
+
+
+def _phase_spec(schema_version: str, phase: str) -> PhaseSpec:
+    if schema_version not in {_RUN_MANIFEST_V1, _RUN_MANIFEST_V2}:
+        raise _manifest_error()
+    try:
+        if schema_version == _RUN_MANIFEST_V2 and phase == "prepared":
+            return _V2_PREPARED_SPEC
+        return PHASE_SPECS[phase]
+    except KeyError as error:
+        raise _manifest_error(error)
 
 
 @dataclass(frozen=True)
@@ -105,15 +157,20 @@ def _manifest_error(error: BaseException | None = None) -> ValueError:
 
 def _validate_manifest(payload: object) -> dict[str, object]:
     try:
-        contracts.validate_contract("run-manifest-v1", payload)
+        if not isinstance(payload, dict):
+            raise TypeError
+        schema_version = payload.get("schemaVersion")
+        contract = contracts.contract_name_for_schema_version(schema_version)
+        if contract not in {"run-manifest-v1", "run-manifest-v2"}:
+            raise ValueError
+        contracts.validate_contract(contract, payload)
     except (TypeError, ValueError, ValidationError) as error:
         raise _manifest_error(error)
-    if not isinstance(payload, dict):
-        raise _manifest_error()
     phase = payload["phase"]
     if not isinstance(phase, str) or phase not in PHASE_SPECS:
         raise _manifest_error()
-    spec = PHASE_SPECS[phase]
+    assert isinstance(schema_version, str)
+    spec = _phase_spec(schema_version, phase)
     if (
         payload["nextAction"] != spec.next_action
         or len(payload["manifestChain"]) != spec.chain_length
@@ -141,15 +198,15 @@ def _validate_manifest(payload: object) -> dict[str, object]:
     assert isinstance(stages, list)
     if [stage["name"] for stage in stages] != list(spec.stages):
         raise _manifest_error()
+    stage_outputs = dict(spec.stage_outputs)
     for stage, expected_name in zip(stages, spec.stages, strict=True):
         assert isinstance(stage, Mapping)
         output_hashes = stage["outputHashes"]
-        expected_logical = dict(zip(spec.stages, spec.artifacts, strict=True))[
-            expected_name
-        ][0]
-        if output_hashes != {
-            expected_logical: artifacts[expected_logical]["sha256"]
-        }:
+        expected_hashes = {
+            logical_name: artifacts[logical_name]["sha256"]
+            for logical_name in stage_outputs[expected_name]
+        }
+        if output_hashes != expected_hashes:
             raise _manifest_error()
     return payload
 
@@ -164,11 +221,12 @@ def build_manifest(
     sources: Sequence[Mapping[str, object]],
     stages: Sequence[Mapping[str, object]],
     artifacts: Mapping[str, Mapping[str, str]],
+    schema_version: str = _RUN_MANIFEST_V1,
 ) -> dict[str, object]:
     """Build one path-free immutable run receipt from completed stage facts."""
 
     try:
-        spec = PHASE_SPECS[phase]
+        spec = _phase_spec(schema_version, phase)
         expected_artifacts = {logical_name for logical_name, _ in spec.artifacts}
         if set(artifacts) != expected_artifacts:
             raise ValueError
@@ -187,7 +245,7 @@ def build_manifest(
             for logical_name, _ in spec.artifacts
         }
         payload: dict[str, object] = {
-            "schemaVersion": "tritrack.run-manifest/v1",
+            "schemaVersion": schema_version,
             "toolVersion": __version__,
             "runId": run_id,
             "profileId": profile_id,
@@ -257,9 +315,30 @@ def _validate_artifact(
     *,
     manifest: Mapping[str, object],
 ) -> None:
+    if logical_name == "syncMap":
+        try:
+            payload = json.loads(encoded.decode("utf-8", errors="strict"))
+            if not isinstance(payload, dict):
+                raise TypeError
+            contract = contracts.contract_name_for_schema_version(
+                payload.get("schemaVersion")
+            )
+            if contract not in {"sync-map-v1", "sync-map-v2"}:
+                raise ValueError
+            contracts.validate_contract(contract, payload)
+        except (
+            UnicodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as error:
+            raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
+        return
     contracts_by_name = {
-        "syncMap": "sync-map-v1",
         "transcriptBundle": "transcript-bundle-v1",
+        "transcriptionReport": "transcription-report-v1",
+        "transcriptionResult": "transcription-result-manifest-v1",
         "alignedTranscript": "aligned-transcript-v1",
         "grouping": "grouping-v1",
         "workingCut": "working-cut-v1",
@@ -296,6 +375,42 @@ def _validate_artifact(
             )
         except (UnicodeError, TypeError, ValueError, ValidationError) as error:
             raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
+
+
+def _validate_transcription_authority(
+    artifacts: Mapping[str, bytes],
+) -> None:
+    names = {"transcriptBundle", "transcriptionReport", "transcriptionResult"}
+    present = names.intersection(artifacts)
+    if not present:
+        return
+    if present != names:
+        raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID")
+    try:
+        result = json.loads(artifacts["transcriptionResult"].decode("utf-8"))
+        if not isinstance(result, dict):
+            raise TypeError
+        bundle = result["bundle"]
+        report = result["report"]
+        if not isinstance(bundle, dict) or not isinstance(report, dict):
+            raise TypeError
+        if (
+            bundle["fileName"] != "transcript-bundle.json"
+            or report["fileName"] != "transcription-report.json"
+            or bundle["sha256"]
+            != hashlib.sha256(artifacts["transcriptBundle"]).hexdigest()
+            or report["sha256"]
+            != hashlib.sha256(artifacts["transcriptionReport"]).hexdigest()
+        ):
+            raise ValueError
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID") from error
 
 
 def _bundle_directory(path: Path) -> Path:
@@ -368,6 +483,9 @@ def load_bundle(
             encoded=encoded,
             sha256=observed_hash,
         )
+    _validate_transcription_authority(
+        {logical_name: artifact.encoded for logical_name, artifact in loaded.items()}
+    )
     return LoadedRunBundle(
         root=root,
         manifest=manifest,
@@ -415,6 +533,7 @@ def _verify_staging(staging: Path, manifest: Mapping[str, object]) -> None:
     observed = {entry.name for entry in os.scandir(staging)}
     if observed != expected:
         raise ValueError("TRITRACK_RUN_BUNDLE_INVALID")
+    encoded_artifacts: dict[str, bytes] = {}
     for logical_name, artifact in artifacts.items():
         assert isinstance(artifact, Mapping)
         encoded = _read_regular_bytes(
@@ -425,6 +544,8 @@ def _verify_staging(staging: Path, manifest: Mapping[str, object]) -> None:
         if hashlib.sha256(encoded).hexdigest() != artifact["sha256"]:
             raise ValueError("TRITRACK_RUN_ARTIFACT_HASH_MISMATCH")
         _validate_artifact(str(logical_name), encoded, manifest=manifest)
+        encoded_artifacts[str(logical_name)] = encoded
+    _validate_transcription_authority(encoded_artifacts)
 
 
 def _fsync_directory(path: Path) -> None:
@@ -525,7 +646,10 @@ def _hash_value(payload: object) -> str:
 
 
 def _artifact_records(
-    staging: Path, phase: str
+    staging: Path,
+    phase: str,
+    *,
+    schema_version: str = _RUN_MANIFEST_V1,
 ) -> dict[str, dict[str, str]]:
     return {
         logical_name: {
@@ -534,7 +658,7 @@ def _artifact_records(
                 staging / file_name, code="TRITRACK_RUN_ARTIFACT_INVALID"
             ),
         }
-        for logical_name, file_name in PHASE_SPECS[phase].artifacts
+        for logical_name, file_name in _phase_spec(schema_version, phase).artifacts
     }
 
 
@@ -596,6 +720,59 @@ def _require_inputs_unchanged(
         raise ValueError("TRITRACK_RUN_INPUT_CHANGED")
 
 
+def _transcription_alternatives(
+    sync_payload: Mapping[str, object],
+    selected: Sequence[Path],
+    *,
+    source_paths: Mapping[str, Path],
+) -> dict[str, tuple[Path, ...]]:
+    if sync_payload.get("schemaVersion") != "tritrack.sync-map/v2":
+        raise ValueError("TRITRACK_RUN_SYNC_MAP_INVALID")
+    groups = sync_payload.get("groups")
+    memberships: dict[str, tuple[str, ...]] = {}
+    try:
+        if not isinstance(groups, list):
+            raise TypeError
+        for group in groups:
+            if not isinstance(group, Mapping):
+                raise TypeError
+            anchor = group["anchor"]
+            sources = group["sources"]
+            if not isinstance(anchor, Mapping) or not isinstance(sources, list):
+                raise TypeError
+            members = (
+                str(anchor["mediaId"]),
+                *(
+                    str(source["mediaId"])
+                    for source in sources
+                    if isinstance(source, Mapping)
+                ),
+            )
+            if len(members) != len(sources) + 1:
+                raise TypeError
+            for media_id in members:
+                if media_id in memberships:
+                    raise ValueError
+                memberships[media_id] = members
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("TRITRACK_RUN_SYNC_MAP_INVALID") from error
+
+    alternatives: dict[str, tuple[Path, ...]] = {}
+    for primary in selected:
+        members = memberships.get(primary.name, ())
+        try:
+            candidates = tuple(
+                source_paths[media_id]
+                for media_id in members
+                if media_id != primary.name
+            )
+        except KeyError as error:
+            raise ValueError("TRITRACK_RUN_SYNC_MAP_INVALID") from error
+        if candidates:
+            alternatives[primary.name] = candidates
+    return alternatives
+
+
 def prepare_run(
     camera_a_sources: Sequence[sync_scan.MediaSource],
     camera_b_sources: Sequence[sync_scan.MediaSource],
@@ -623,13 +800,10 @@ def prepare_run(
     profile_hash = _hash_value(doctor.load_profile(profile_id))
     binding_hash = _hash_value(doctor.load_title_binding(binding_id))
     source_set_hash = _hash_value(inventory)
-    transcribed_hash = _hash_value(
-        [
-            source
-            for source in sorted(inventory, key=lambda item: item["mediaId"])
-            if source["transcribed"]
-        ]
-    )
+    source_paths = {
+        source.media_id: source.path
+        for source in (*camera_a_sources, *camera_b_sources)
+    }
 
     def build(staging: Path) -> dict[str, object]:
         receipt = doctor.write_receipt(
@@ -640,17 +814,47 @@ def prepare_run(
         )
         if receipt.get("supported") is not True:
             raise ValueError("TRITRACK_RUN_ENVIRONMENT_UNSUPPORTED")
-        sync_scan.synchronize_and_publish(
+        sync_payload = sync_scan.synchronize_and_publish(
             camera_a_sources,
             camera_b_sources,
             profile_id=profile_id,
             output_path=staging / "sync-map.json",
         )
-        transcribe_takes.transcribe_and_publish(
+        result = transcription_result.transcribe_local_result(
             selected_transcribe,
+            alternative_paths=_transcription_alternatives(
+                sync_payload,
+                selected_transcribe,
+                source_paths=source_paths,
+            ),
             model_path=selected_model,
             language=language,
-            output_path=staging / "transcript-bundle.json",
+        )
+        _write_manifest(staging / "transcript-bundle.json", result.bundle_bytes)
+        _write_manifest(
+            staging / "transcription-report.json", result.report_bytes
+        )
+        _write_manifest(
+            staging / "transcription-result-manifest.json",
+            result.manifest_bytes,
+        )
+        selected_hashes = {
+            take["selectedSourceSha256"]
+            for take in result.report["takes"]
+            if take["status"] in {"completed", "empty", "reused"}
+        }
+        prepared_inventory = [
+            {**source, "transcribed": source["sha256"] in selected_hashes}
+            for source in inventory
+        ]
+        transcribed_hash = _hash_value(
+            [
+                source
+                for source in sorted(
+                    prepared_inventory, key=lambda item: item["mediaId"]
+                )
+                if source["transcribed"]
+            ]
         )
         emit_fcpxml.emit_and_publish(
             camera_a_sources,
@@ -664,7 +868,9 @@ def prepare_run(
         _require_inputs_unchanged(
             source_hashes, model_path=selected_model, model_sha256=model_sha256
         )
-        artifacts = _artifact_records(staging, "prepared")
+        artifacts = _artifact_records(
+            staging, "prepared", schema_version=_RUN_MANIFEST_V2
+        )
         stages = [
             {
                 "name": "doctor",
@@ -689,7 +895,12 @@ def prepare_run(
                     "transcribedSources": transcribed_hash,
                 },
                 "outputHashes": {
-                    "transcriptBundle": artifacts["transcriptBundle"]["sha256"]
+                    logical_name: artifacts[logical_name]["sha256"]
+                    for logical_name in (
+                        "transcriptBundle",
+                        "transcriptionReport",
+                        "transcriptionResult",
+                    )
                 },
             },
             {
@@ -709,9 +920,10 @@ def prepare_run(
             binding_id=binding_id,
             phase="prepared",
             manifest_chain=[],
-            sources=inventory,
+            sources=prepared_inventory,
             stages=stages,
             artifacts=artifacts,
+            schema_version=_RUN_MANIFEST_V2,
         )
 
     return summarize_bundle(publish_bundle(Path(output_dir), build))
@@ -789,6 +1001,7 @@ def align_run(
             sources=prepared.manifest["sources"],
             stages=stages,
             artifacts=artifacts,
+            schema_version=str(prepared.manifest["schemaVersion"]),
         )
 
     return summarize_bundle(publish_bundle(Path(output_dir), build))
@@ -851,7 +1064,13 @@ def _validate_finish_chain(
 ) -> None:
     if aligned.manifest["manifestChain"] != [prepared.manifest_sha256]:
         raise ValueError("TRITRACK_RUN_CHAIN_MISMATCH")
-    for field in ("runId", "profileId", "bindingId", "sources"):
+    for field in (
+        "schemaVersion",
+        "runId",
+        "profileId",
+        "bindingId",
+        "sources",
+    ):
         if aligned.manifest[field] != prepared.manifest[field]:
             raise ValueError("TRITRACK_RUN_CHAIN_MISMATCH")
 
@@ -958,6 +1177,7 @@ def finish_run(
             sources=prepared.manifest["sources"],
             stages=stages,
             artifacts=artifacts,
+            schema_version=str(prepared.manifest["schemaVersion"]),
         )
 
     return summarize_bundle(publish_bundle(Path(output_dir), build))

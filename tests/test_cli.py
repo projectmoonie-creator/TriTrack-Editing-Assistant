@@ -228,9 +228,25 @@ class CliSmokeTest(unittest.TestCase):
 
     def test_transcribe_help_exposes_only_the_local_task_7_boundary(self):
         completed = self.run_cli("transcribe", "--help")
-        for option in ("--media", "--model", "--language", "--output", "--json"):
+        for option in (
+            "--media",
+            "--alternative-source",
+            "--reuse-from",
+            "--model",
+            "--language",
+            "--output",
+            "--json",
+        ):
             self.assertIn(option, completed.stdout)
-        for excluded in ("provider", "upload", "prompt", "fallback"):
+        for excluded in (
+            "provider",
+            "upload",
+            "prompt",
+            "fallback",
+            "--vad",
+            "--no-vad",
+            "voice-activity",
+        ):
             self.assertNotIn(excluded, completed.stdout.lower())
 
     def test_align_help_exposes_only_the_local_cue_addressed_boundary(self):
@@ -261,6 +277,8 @@ class CliSmokeTest(unittest.TestCase):
             "--json",
         ):
             self.assertIn(option, prepare.stdout)
+        for excluded in ("--vad", "--no-vad", "voice-activity"):
+            self.assertNotIn(excluded, prepare.stdout.lower())
 
         align = self.run_cli("run", "align", "--help")
         for option in ("--prepared", "--revision", "--output", "--json"):
@@ -887,6 +905,121 @@ class CliSmokeTest(unittest.TestCase):
             encoded_summary = json.dumps(summary)
             self.assertNotIn(str(root), encoded_summary)
             self.assertNotIn("Invented private transcript text", encoded_summary)
+
+    def test_transcribe_cli_retries_invalid_source_and_degrades_failed_take(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            retry = root / "Retry.MP4"
+            alternative = root / "Retry-alt.MP4"
+            failed = root / "Failed.MP4"
+            good = root / "Good.MP4"
+            model = root / "model.bin"
+            output = root / "transcription-result"
+            for path in (retry, alternative, failed, good):
+                path.write_bytes(path.name.encode("ascii"))
+            model.write_bytes(b"invented-model")
+
+            ffmpeg = root / "ffmpeg"
+            ffmpeg.write_text(
+                "#!/usr/bin/env python3\n"
+                + textwrap.dedent(
+                    """
+                    import pathlib
+                    import sys
+                    import wave
+
+                    source = pathlib.Path(sys.argv[sys.argv.index("-i") + 1])
+                    if source.name == "Failed.MP4":
+                        raise SystemExit(3)
+                    marker = 2 if source.name == "Retry.MP4" else 1
+                    with wave.open(sys.argv[-1], "wb") as output:
+                        output.setnchannels(1)
+                        output.setsampwidth(2)
+                        output.setframerate(16000)
+                        output.writeframes(bytes([marker, 0]) * 16000)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            ffmpeg.chmod(0o755)
+
+            whisper = root / "whisper-cli"
+            whisper.write_text(
+                "#!/usr/bin/env python3\n"
+                + textwrap.dedent(
+                    """
+                    import json
+                    import sys
+                    import wave
+
+                    if "--version" in sys.argv:
+                        print("whisper.cpp version: invented-retry")
+                        raise SystemExit(0)
+                    audio = sys.argv[sys.argv.index("--file") + 1]
+                    with wave.open(audio, "rb") as stream:
+                        marker = stream.readframes(1)[0]
+                    text = "loop loop loop loop" if marker == 2 else "Clean invented cue."
+                    prefix = sys.argv[sys.argv.index("--output-file") + 1]
+                    payload = {
+                        "result": {"language": "en"},
+                        "transcription": [
+                            {"offsets": {"from": 0, "to": 500}, "text": text}
+                        ],
+                    }
+                    with open(prefix + ".json", "w", encoding="utf-8") as handle:
+                        json.dump(payload, handle)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            whisper.chmod(0o755)
+            path = str(root) + os.pathsep + os.environ.get("PATH", "")
+
+            completed = self.run_cli_unchecked(
+                "transcribe",
+                "--media",
+                str(retry),
+                "--media",
+                str(failed),
+                "--media",
+                str(good),
+                "--alternative-source",
+                f"{retry.name}={alternative}",
+                "--model",
+                str(model),
+                "--language",
+                "en",
+                "--output",
+                str(output),
+                "--json",
+                environment_overrides={"PATH": path},
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                {entry.name for entry in output.iterdir()},
+                {"manifest.json", "transcript-bundle.json", "transcription-report.json"},
+            )
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["takeCount"], 3)
+            self.assertEqual(summary["completedCount"], 2)
+            self.assertEqual(summary["failedCount"], 1)
+            report = json.loads(
+                (output / "transcription-report.json").read_text(encoding="utf-8")
+            )
+            reports = {take["takeId"]: take for take in report["takes"]}
+            self.assertEqual(
+                [attempt["outcome"] for attempt in reports[retry.name]["attempts"]],
+                ["invalid", "completed"],
+            )
+            self.assertEqual(reports[failed.name]["status"], "failed")
+            self.assertEqual(reports[good.name]["status"], "completed")
+            self.assertEqual(
+                reports[retry.name]["attempts"][0]["settings"],
+                reports[retry.name]["attempts"][1]["settings"],
+            )
+            self.assertNotIn(str(root), completed.stdout)
+            self.assertNotIn("Clean invented cue", completed.stdout)
 
     def test_emit_rejects_existing_output_before_reading_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:

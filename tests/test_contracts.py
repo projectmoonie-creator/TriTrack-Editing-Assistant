@@ -345,6 +345,28 @@ VALID_CONTRACTS.update(
     }
 )
 
+_RUN_MANIFEST_V2 = copy.deepcopy(VALID_CONTRACTS["run-manifest-v1"])
+_RUN_MANIFEST_V2["schemaVersion"] = "tritrack.run-manifest/v2"
+_RUN_MANIFEST_V2["artifacts"].update(
+    {
+        "transcriptionReport": {
+            "fileName": "transcription-report.json",
+            "sha256": "6" * 64,
+        },
+        "transcriptionResult": {
+            "fileName": "transcription-result-manifest.json",
+            "sha256": "7" * 64,
+        },
+    }
+)
+_RUN_MANIFEST_V2["stages"][2]["outputHashes"].update(
+    {
+        "transcriptionReport": "6" * 64,
+        "transcriptionResult": "7" * 64,
+    }
+)
+VALID_CONTRACTS["run-manifest-v2"] = _RUN_MANIFEST_V2
+
 
 class ContractValidationTest(unittest.TestCase):
     def test_task_14_contract_names_are_closed_and_installed(self):
@@ -353,6 +375,7 @@ class ContractValidationTest(unittest.TestCase):
                 "sync-map-v2",
                 "transcription-report-v1",
                 "transcription-result-manifest-v1",
+                "run-manifest-v2",
             }.issubset(contracts.CONTRACT_NAMES)
         )
 
