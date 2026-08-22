@@ -12,6 +12,7 @@ include docs/ROADMAP.md
 include docs/TASK-11-VERIFICATION.md
 include docs/TASK-13-DECISION.md
 include docs/TASK-13-VERIFICATION.md
+include docs/TASK-14-DECISION.md
 include docs/TOOLING.md
 include docs/superpowers/specs/2026-08-17-task-11-release-readiness-design.md
 recursive-include examples *.py *.json

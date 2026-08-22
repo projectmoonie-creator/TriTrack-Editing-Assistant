@@ -125,10 +125,10 @@ def _media_command(output: Path, *, color: str) -> list[str]:
 def _load_and_validate_outputs(sync_map_path: Path, fcpxml_path: Path) -> dict:
     try:
         sync_map = json.loads(sync_map_path.read_text(encoding="utf-8"))
-        contracts.validate_contract("sync-map-v1", sync_map)
+        contracts.validate_contract("sync-map-v2", sync_map)
         if sync_map["profileId"] != PROFILE_ID:
             raise DemoFailure("TRITRACK_DEMO_PROFILE_MISMATCH")
-        if len(sync_map["pairs"]) != 1:
+        if len(sync_map["groups"]) != 1:
             raise DemoFailure("TRITRACK_DEMO_SYNC_PAIR_MISSING")
         profile = doctor.load_profile(PROFILE_ID)
         binding = doctor.load_title_binding(BINDING_ID)
@@ -276,7 +276,7 @@ def run_demo(
         "profileId": PROFILE_ID,
         "titleBindingId": BINDING_ID,
         "componentCount": component_count,
-        "syncPairCount": len(sync_map["pairs"]),
+        "syncPairCount": len(sync_map["groups"]),
         "deterministicFcpxml": deterministic,
         "fcpxmlStructure": "passed",
         "dtdValidation": dtd_status,

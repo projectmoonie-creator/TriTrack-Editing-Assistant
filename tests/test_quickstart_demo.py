@@ -172,9 +172,9 @@ class QuickstartDemoTest(unittest.TestCase):
             sync_map = json.loads(
                 (output / "results" / "sync-map.json").read_text(encoding="utf-8")
             )
-            contracts.validate_contract("sync-map-v1", sync_map)
+            contracts.validate_contract("sync-map-v2", sync_map)
             self.assertEqual(sync_map["profileId"], PROFILE_ID)
-            self.assertEqual(len(sync_map["pairs"]), 1)
+            self.assertEqual(len(sync_map["groups"]), 1)
             xml_text = (output / "results" / "string-out.fcpxml").read_text(
                 encoding="utf-8"
             )

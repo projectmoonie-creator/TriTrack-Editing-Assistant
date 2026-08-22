@@ -97,7 +97,7 @@ class PackagingPolicyTest(unittest.TestCase):
             "tests/test_downstream_seam.py",
         ):
             self.assertIn(required, policy["sdist"]["expectedMembers"])
-        self.assertEqual(len(policy["wheel"]["expectedMembers"]), 38)
+        self.assertEqual(len(policy["wheel"]["expectedMembers"]), 45)
         self.assertFalse(
             any(
                 "downstream" in member
