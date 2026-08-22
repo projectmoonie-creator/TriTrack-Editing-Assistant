@@ -388,7 +388,13 @@ def _validate_transcription_authority(
         raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID")
     try:
         result = json.loads(artifacts["transcriptionResult"].decode("utf-8"))
+        bundle_payload = json.loads(artifacts["transcriptBundle"].decode("utf-8"))
+        report_payload = json.loads(
+            artifacts["transcriptionReport"].decode("utf-8")
+        )
         if not isinstance(result, dict):
+            raise TypeError
+        if not isinstance(bundle_payload, dict) or not isinstance(report_payload, dict):
             raise TypeError
         bundle = result["bundle"]
         report = result["report"]
@@ -403,6 +409,9 @@ def _validate_transcription_authority(
             != hashlib.sha256(artifacts["transcriptionReport"]).hexdigest()
         ):
             raise ValueError
+        transcription_result.validate_result_relationships(
+            bundle_payload, report_payload
+        )
     except (
         KeyError,
         TypeError,

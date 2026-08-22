@@ -160,6 +160,111 @@ def reused_attempt(source_sha256: str) -> AttemptRecord:
     )
 
 
+def validate_result_relationships(
+    bundle: Mapping[str, object], report: Mapping[str, object]
+) -> None:
+    """Reject individually valid authorities that disagree about their takes."""
+
+    try:
+        run_settings = report["runSettings"]
+        requested_take_ids = report["requestedTakeIds"]
+        reported_takes = report["takes"]
+        bundled_takes = bundle["takes"]
+        if (
+            not isinstance(run_settings, Mapping)
+            or not isinstance(requested_take_ids, list)
+            or not isinstance(reported_takes, list)
+            or not isinstance(bundled_takes, list)
+            or bundle["profileId"] != report["profileId"]
+            or bundle["language"] != run_settings["language"]
+            or bundle["modelSha256"] != run_settings["recognitionModelSha256"]
+        ):
+            raise ValueError
+
+        report_ids = [take["takeId"] for take in reported_takes]
+        bundle_ids = [take["takeId"] for take in bundled_takes]
+        if (
+            requested_take_ids != report_ids
+            or report_ids != sorted(report_ids)
+            or len(report_ids) != len(set(report_ids))
+            or bundle_ids != sorted(bundle_ids)
+            or len(bundle_ids) != len(set(bundle_ids))
+        ):
+            raise ValueError
+
+        report_by_id = {take["takeId"]: take for take in reported_takes}
+        bundle_by_id = {take["takeId"]: take for take in bundled_takes}
+        expected_bundle_ids = {
+            take_id
+            for take_id, take in report_by_id.items()
+            if take["status"] != "failed"
+        }
+        if set(bundle_by_id) != expected_bundle_ids:
+            raise ValueError
+
+        unknown_settings = {
+            "language": "unknown",
+            "recognitionModelSha256": "unknown",
+            "voiceActivity": "unknown",
+            "voiceActivityModel": "unknown",
+        }
+        for take_id, reported in report_by_id.items():
+            status = reported["status"]
+            selected_source = reported["selectedSourceSha256"]
+            attempts = reported["attempts"]
+            if not isinstance(attempts, list) or [
+                attempt["ordinal"] for attempt in attempts
+            ] != list(range(1, len(attempts) + 1)):
+                raise ValueError
+
+            if status == "reused":
+                if (
+                    len(attempts) != 1
+                    or attempts[0]["outcome"] != "reused"
+                    or attempts[0]["settings"] != unknown_settings
+                    or selected_source != attempts[0]["sourceSha256"]
+                ):
+                    raise ValueError
+            else:
+                if any(
+                    attempt["settings"] != run_settings for attempt in attempts
+                ):
+                    raise ValueError
+                if status == "failed":
+                    if selected_source is not None or any(
+                        attempt["outcome"] not in {"failed", "invalid"}
+                        for attempt in attempts
+                    ):
+                        raise ValueError
+                elif (
+                    attempts[-1]["outcome"] != status
+                    or selected_source != attempts[-1]["sourceSha256"]
+                    or any(
+                        attempt["outcome"] not in {"failed", "invalid"}
+                        for attempt in attempts[:-1]
+                    )
+                ):
+                    raise ValueError
+
+            if status == "failed":
+                continue
+            bundled = bundle_by_id[take_id]
+            if (
+                bundled["sourceSha256"] != selected_source
+                or (
+                    status != "reused"
+                    and bundled["status"] != status
+                )
+                or (
+                    status == "reused"
+                    and bundled["status"] not in {"completed", "empty"}
+                )
+            ):
+                raise ValueError
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+
+
 def build_transcription_result(
     requests: Sequence[TranscriptionRequest],
     *,
@@ -281,6 +386,7 @@ def build_transcription_result(
         "runSettings": _settings_payload(settings),
         "takes": reports,
     }
+    validate_result_relationships(bundle, report)
     bundle_bytes = transcribe_takes.encode_transcript_bundle(bundle).encode("utf-8")
     report_bytes = _canonical_bytes("transcription-report-v1", report)
     manifest: dict[str, object] = {
@@ -462,6 +568,7 @@ def load_transcription_result(result_dir: Path) -> BuiltTranscriptionResult:
         != hashlib.sha256(report_bytes).hexdigest()
     ):
         raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    validate_result_relationships(bundle, report)
     return BuiltTranscriptionResult(
         bundle=bundle,
         report=report,
@@ -530,6 +637,8 @@ def transcribe_local_result(
         if len(paths) != len(set(paths)):
             raise ValueError("TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID")
     all_paths = (*primary, *(path for paths in alternatives.values() for path in paths))
+    if len(all_paths) != len(set(all_paths)):
+        raise ValueError("TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID")
     for path in all_paths:
         transcribe_takes._require_readable_file(
             path, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE"
