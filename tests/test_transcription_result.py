@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import inspect
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tritrack_editing_assistant import transcribe_takes
 
@@ -29,6 +32,31 @@ class TranscriptionResultTest(unittest.TestCase):
             hasattr(self.workflow(), "transcribe_and_publish_result"),
             "local command orchestrator is not implemented",
         )
+
+    def test_local_orchestrator_rejects_reusing_primary_as_alternative(self) -> None:
+        workflow = self.workflow()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media = root / "take-001.mov"
+            model = root / "model.bin"
+            media.write_bytes(b"invented media")
+            model.write_bytes(b"invented model")
+            with (
+                mock.patch.object(
+                    transcribe_takes,
+                    "_read_engine_version",
+                    side_effect=AssertionError("engine must not start"),
+                ),
+                self.assertRaisesRegex(
+                    ValueError, "TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID"
+                ),
+            ):
+                workflow.transcribe_local_result(
+                    [media],
+                    alternative_paths={media.name: [media]},
+                    model_path=model,
+                    language="zh",
+                )
 
     def settings(self):
         workflow = self.workflow()
@@ -234,6 +262,82 @@ class TranscriptionResultTest(unittest.TestCase):
         self.assertEqual(loaded.bundle, result.bundle)
         self.assertEqual(loaded.report, result.report)
         self.assertEqual(loaded.manifest, result.manifest)
+
+    def test_loader_rejects_hash_valid_report_disconnected_from_bundle(self) -> None:
+        workflow = self.workflow()
+        source = self.source("primary.mov", "a" * 64)
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda _source, take_id, _settings: self.completed(
+                take_id, "a" * 64
+            ),
+        )
+        report = copy.deepcopy(result.report)
+        report["requestedTakeIds"] = ["different-take"]
+        report["takes"][0]["takeId"] = "different-take"
+        report_bytes = workflow._canonical_bytes("transcription-report-v1", report)
+        manifest = copy.deepcopy(result.manifest)
+        manifest["report"]["sha256"] = hashlib.sha256(report_bytes).hexdigest()
+        disconnected = workflow.BuiltTranscriptionResult(
+            bundle=result.bundle,
+            report=report,
+            manifest=manifest,
+            bundle_bytes=result.bundle_bytes,
+            report_bytes=report_bytes,
+            manifest_bytes=workflow._canonical_bytes(
+                "transcription-result-manifest-v1", manifest
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "result"
+            workflow.publish_transcription_result(output, disconnected)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_TRANSCRIPT_RESULT_INVALID"
+            ):
+                workflow.load_transcription_result(output)
+
+    def test_loader_rejects_hash_valid_retry_with_changed_settings(self) -> None:
+        workflow = self.workflow()
+        primary = self.source("primary.mov", "a" * 64)
+        alternative = self.source("alternative.mov", "b" * 64)
+
+        def decode(source, take_id, _settings):
+            if source.sha256 == "a" * 64:
+                raise ValueError("TRITRACK_TRANSCRIPT_ANOMALY_INVALID")
+            return self.completed(take_id, source.sha256)
+
+        result = workflow.build_transcription_result(
+            [self.request("take-001", primary, alternative)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=decode,
+        )
+        report = copy.deepcopy(result.report)
+        report["takes"][0]["attempts"][1]["settings"]["language"] = "en"
+        report_bytes = workflow._canonical_bytes("transcription-report-v1", report)
+        manifest = copy.deepcopy(result.manifest)
+        manifest["report"]["sha256"] = hashlib.sha256(report_bytes).hexdigest()
+        disconnected = workflow.BuiltTranscriptionResult(
+            bundle=result.bundle,
+            report=report,
+            manifest=manifest,
+            bundle_bytes=result.bundle_bytes,
+            report_bytes=report_bytes,
+            manifest_bytes=workflow._canonical_bytes(
+                "transcription-result-manifest-v1", manifest
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "result"
+            workflow.publish_transcription_result(output, disconnected)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_TRANSCRIPT_RESULT_INVALID"
+            ):
+                workflow.load_transcription_result(output)
 
 
 if __name__ == "__main__":

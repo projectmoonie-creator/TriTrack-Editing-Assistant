@@ -770,6 +770,55 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             self.assertNotIn(model.name.encode(), encoded)
             self.assertNotIn(b"Invented words", encoded)
 
+    def test_load_rejects_hash_valid_disconnected_transcription_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prepared, _sources, _model = self.prepare(root)
+
+            report = json.loads(
+                prepared.artifacts["transcriptionReport"].encoded
+            )
+            report["requestedTakeIds"] = ["different-take"]
+            report["takes"][0]["takeId"] = "different-take"
+            report_bytes = transcription_result._canonical_bytes(
+                "transcription-report-v1", report
+            )
+            prepared.artifacts["transcriptionReport"].path.write_bytes(report_bytes)
+
+            result = json.loads(
+                prepared.artifacts["transcriptionResult"].encoded
+            )
+            result["report"]["sha256"] = sha256(report_bytes)
+            result_bytes = transcription_result._canonical_bytes(
+                "transcription-result-manifest-v1", result
+            )
+            prepared.artifacts["transcriptionResult"].path.write_bytes(result_bytes)
+
+            manifest = copy.deepcopy(prepared.manifest)
+            manifest["artifacts"]["transcriptionReport"]["sha256"] = sha256(
+                report_bytes
+            )
+            manifest["artifacts"]["transcriptionResult"]["sha256"] = sha256(
+                result_bytes
+            )
+            transcribe_stage = next(
+                stage for stage in manifest["stages"] if stage["name"] == "transcribe"
+            )
+            transcribe_stage["outputHashes"]["transcriptionReport"] = sha256(
+                report_bytes
+            )
+            transcribe_stage["outputHashes"]["transcriptionResult"] = sha256(
+                result_bytes
+            )
+            (prepared.root / run_workflow.MANIFEST_FILE_NAME).write_bytes(
+                run_workflow.encode_manifest(manifest)
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_ARTIFACT_INVALID"
+            ):
+                run_workflow.load_bundle(prepared.root)
+
     def test_prepare_rejects_unsupported_subset_duplicate_and_late_change(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
