@@ -149,7 +149,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         for token in forbidden:
             self.assertNotIn(token, lowered)
 
-    def test_public_status_records_tasks_1_through_13(self) -> None:
+    def test_public_status_records_tasks_1_through_14(self) -> None:
         status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
         roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
         tooling = (ROOT / "docs" / "TOOLING.md").read_text(encoding="utf-8")
@@ -166,7 +166,13 @@ class MaintainerBoundaryTest(unittest.TestCase):
         task_12_verification = (ROOT / "docs" / "TASK-12-VERIFICATION.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Tasks 1–13", status)
+        task_14_decision = (ROOT / "docs" / "TASK-14-DECISION.md").read_text(
+            encoding="utf-8"
+        )
+        task_14_closeout = (
+            ROOT / "docs" / "reviews" / "task-14-closeout-2026-08-22.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Tasks 1–14", status)
         self.assertIn("Task 6.5", status)
         self.assertLess(status.index("Task 6.5"), status.index("Task 7"))
         self.assertLess(status.index("Task 7"), status.index("Task 8"))
@@ -175,6 +181,7 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertLess(status.index("Task 10"), status.index("Task 11"))
         self.assertLess(status.index("Task 11"), status.index("Task 12"))
         self.assertLess(status.index("Task 12"), status.index("Task 13"))
+        self.assertLess(status.index("Task 13"), status.index("Task 14"))
         self.assertIn("Task 10", roadmap)
         self.assertLess(roadmap.index("Task 10"), roadmap.index("Task 11"))
         for authority in (
@@ -197,6 +204,14 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("Task 12", roadmap)
         self.assertIn("Task 13", status)
         self.assertIn("Task 13", roadmap)
+        self.assertIn("Task 14", status)
+        self.assertIn("Task 14", roadmap)
+        self.assertIn("Voice-activity detection remains **off by default**", task_14_decision)
+        self.assertIn("299 tests", task_14_closeout)
+        self.assertIn("semantic cross-binding", task_14_closeout)
+        self.assertIn("claude-timeout", task_14_closeout)
+        self.assertIn("advisory", task_14_closeout)
+        self.assertNotIn("Commit the sanitized Task 13 review evidence", status)
         self.assertIn("alphaReviewTarget", task_12_verification)
         self.assertIn("alphaEvidenceRecord", task_12_verification)
         self.assertIn("ce562e995b63f3f1a29989de3e1ef202da27b5f2", task_11_verification)
