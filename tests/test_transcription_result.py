@@ -131,6 +131,8 @@ class TranscriptionResultTest(unittest.TestCase):
         *,
         text: str = "Invented cue.",
         duration_ms: int = 1000,
+        duration_frame_count: int | None = None,
+        sample_rate_hz: int | None = None,
     ):
         return transcribe_takes.TranscribedTake(
             take_id=take_id,
@@ -145,6 +147,29 @@ class TranscriptionResultTest(unittest.TestCase):
                 },
             ),
             duration_ms=duration_ms,
+            duration_frame_count=duration_frame_count,
+            sample_rate_hz=sample_rate_hz,
+        )
+
+    def resigned_result(self, result, report):
+        workflow = self.workflow()
+        report_bytes = workflow._canonical_bytes("transcription-report-v2", report)
+        density_bytes = workflow._density_table(report)
+        manifest = copy.deepcopy(result.manifest)
+        manifest["report"]["sha256"] = hashlib.sha256(report_bytes).hexdigest()
+        manifest["densityTable"]["sha256"] = hashlib.sha256(
+            density_bytes
+        ).hexdigest()
+        return workflow.BuiltTranscriptionResult(
+            bundle=result.bundle,
+            report=report,
+            manifest=manifest,
+            bundle_bytes=result.bundle_bytes,
+            report_bytes=report_bytes,
+            manifest_bytes=workflow._canonical_bytes(
+                "transcription-result-manifest-v2", manifest
+            ),
+            density_table_bytes=density_bytes,
         )
 
     def sparse(self, take_id: str, digest: str):
@@ -333,6 +358,8 @@ class TranscriptionResultTest(unittest.TestCase):
             attempts[0]["metrics"],
             {
                 "durationMs": 120000,
+                "durationFrameCount": 1920000,
+                "sampleRateHz": 16000,
                 "characterCount": 1,
                 "charactersPerSecond": "0.008",
                 "sparse": True,
@@ -343,6 +370,7 @@ class TranscriptionResultTest(unittest.TestCase):
         table = result.density_table_bytes.decode("utf-8")
         self.assertLess(table.index("0.008"), table.index("THRESHOLD"))
         self.assertLess(table.index("THRESHOLD"), table.index("2.000"))
+        self.assertIn("THRESHOLD\t1.000\t-\t30.000", table)
         self.assertNotIn("/invented/", table)
         self.assertNotIn("x" * 20, table)
 
@@ -610,20 +638,7 @@ class TranscriptionResultTest(unittest.TestCase):
         report = copy.deepcopy(result.report)
         report["requestedTakeIds"] = ["different-take"]
         report["takes"][0]["takeId"] = "different-take"
-        report_bytes = workflow._canonical_bytes("transcription-report-v2", report)
-        manifest = copy.deepcopy(result.manifest)
-        manifest["report"]["sha256"] = hashlib.sha256(report_bytes).hexdigest()
-        disconnected = workflow.BuiltTranscriptionResult(
-            bundle=result.bundle,
-            report=report,
-            manifest=manifest,
-            bundle_bytes=result.bundle_bytes,
-            report_bytes=report_bytes,
-            manifest_bytes=workflow._canonical_bytes(
-                "transcription-result-manifest-v2", manifest
-            ),
-            density_table_bytes=result.density_table_bytes,
-        )
+        disconnected = self.resigned_result(result, report)
 
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "result"
@@ -651,20 +666,7 @@ class TranscriptionResultTest(unittest.TestCase):
         )
         report = copy.deepcopy(result.report)
         report["takes"][0]["attempts"][1]["settings"]["language"] = "en"
-        report_bytes = workflow._canonical_bytes("transcription-report-v2", report)
-        manifest = copy.deepcopy(result.manifest)
-        manifest["report"]["sha256"] = hashlib.sha256(report_bytes).hexdigest()
-        disconnected = workflow.BuiltTranscriptionResult(
-            bundle=result.bundle,
-            report=report,
-            manifest=manifest,
-            bundle_bytes=result.bundle_bytes,
-            report_bytes=report_bytes,
-            manifest_bytes=workflow._canonical_bytes(
-                "transcription-result-manifest-v2", manifest
-            ),
-            density_table_bytes=result.density_table_bytes,
-        )
+        disconnected = self.resigned_result(result, report)
 
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "result"
@@ -699,6 +701,64 @@ class TranscriptionResultTest(unittest.TestCase):
             ValueError, "TRITRACK_TRANSCRIPT_RESULT_INVALID"
         ):
             workflow.validate_result_relationships(result.bundle, report)
+
+    def test_loader_rejects_fully_resigned_retry_after_usable_source(self) -> None:
+        workflow = self.workflow()
+        source = self.source("primary.mov", "a" * 64)
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda _source, take_id, _settings: self.completed(
+                take_id, "a" * 64
+            ),
+        )
+        report = copy.deepcopy(result.report)
+        extra = copy.deepcopy(report["takes"][0]["attempts"][0])
+        extra["ordinal"] = 2
+        extra["sourceSha256"] = "b" * 64
+        report["takes"][0]["attempts"].append(extra)
+        report["summary"].update(
+            {
+                "sourceAttemptCount": 2,
+                "retryAttemptCount": 1,
+                "unrescuedTakeCount": 1,
+            }
+        )
+        resigned = self.resigned_result(result, report)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "result"
+            workflow.publish_transcription_result(output, resigned)
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_TRANSCRIPT_RESULT_INVALID"
+            ):
+                workflow.load_transcription_result(output)
+
+    def test_relationships_reject_sparse_label_for_selected_empty_bundle(self) -> None:
+        workflow = self.workflow()
+        source = self.source("primary.mov", "a" * 64)
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda _source, take_id, _settings: self.sparse(
+                take_id, "a" * 64
+            ),
+        )
+        bundle = copy.deepcopy(result.bundle)
+        bundle["takes"][0]["status"] = "empty"
+        bundle["takes"][0]["cues"] = []
+        report = copy.deepcopy(result.report)
+        report["takes"][0]["status"] = "empty"
+        metrics = report["takes"][0]["attempts"][0]["metrics"]
+        metrics["characterCount"] = 0
+        metrics["charactersPerSecond"] = "0.000"
+
+        with self.assertRaisesRegex(
+            ValueError, "TRITRACK_TRANSCRIPT_RESULT_INVALID"
+        ):
+            workflow.validate_result_relationships(bundle, report)
 
 
 if __name__ == "__main__":

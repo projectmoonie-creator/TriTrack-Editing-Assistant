@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+from jsonschema import ValidationError
+
 from . import contracts, process, sparse_source, transcribe_takes
 
 _FATAL_TAKE_ERRORS = frozenset(
@@ -76,6 +78,8 @@ class AttemptMetrics:
     """Observable content-density facts for one attempted source."""
 
     duration_ms: int | None
+    duration_frame_count: int | None
+    sample_rate_hz: int | None
     character_count: int | None
     characters_per_second: str | None
     sparse: bool | None
@@ -118,6 +122,8 @@ def _attempt_payload(attempt: AttemptRecord) -> dict[str, object]:
         "settings": _settings_payload(attempt.settings),
         "metrics": {
             "durationMs": attempt.metrics.duration_ms,
+            "durationFrameCount": attempt.metrics.duration_frame_count,
+            "sampleRateHz": attempt.metrics.sample_rate_hz,
             "characterCount": attempt.metrics.character_count,
             "charactersPerSecond": attempt.metrics.characters_per_second,
             "sparse": attempt.metrics.sparse,
@@ -126,22 +132,68 @@ def _attempt_payload(attempt: AttemptRecord) -> dict[str, object]:
 
 
 def _unknown_metrics() -> AttemptMetrics:
-    return AttemptMetrics(None, None, None, None)
+    return AttemptMetrics(None, None, None, None, None, None)
+
+
+def _exact_duration_ms(
+    take: transcribe_takes.TranscribedTake,
+) -> Fraction | None:
+    """Return exact normalized duration while retaining ceiling ms for cues."""
+
+    duration_ms = take.duration_ms
+    frame_count = take.duration_frame_count
+    sample_rate_hz = take.sample_rate_hz
+    if frame_count is None and sample_rate_hz is None:
+        if duration_ms is None:
+            return None
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int):
+            raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+        return Fraction(duration_ms, 1)
+    if (
+        isinstance(frame_count, bool)
+        or not isinstance(frame_count, int)
+        or frame_count <= 0
+        or isinstance(sample_rate_hz, bool)
+        or not isinstance(sample_rate_hz, int)
+        or sample_rate_hz <= 0
+        or isinstance(duration_ms, bool)
+        or not isinstance(duration_ms, int)
+        or duration_ms
+        != (frame_count * 1000 + sample_rate_hz - 1) // sample_rate_hz
+    ):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    return Fraction(frame_count * 1000, sample_rate_hz)
+
+
+def _duration_evidence(
+    take: transcribe_takes.TranscribedTake,
+) -> tuple[int, int, int] | None:
+    exact_ms = _exact_duration_ms(take)
+    if exact_ms is None or take.duration_ms is None:
+        return None
+    if take.duration_frame_count is None:
+        return take.duration_ms, take.duration_ms * 16, 16_000
+    assert take.sample_rate_hz is not None
+    return take.duration_ms, take.duration_frame_count, take.sample_rate_hz
 
 
 def _measured_metrics(take: transcribe_takes.TranscribedTake) -> AttemptMetrics:
-    duration_ms = take.duration_ms
-    if duration_ms is None:
+    evidence = _duration_evidence(take)
+    if evidence is None:
         return _unknown_metrics()
+    duration_ms, frame_count, sample_rate_hz = evidence
+    exact_duration_ms = Fraction(frame_count * 1000, sample_rate_hz)
     count = sparse_source.transcript_characters(take.cues)
-    rate = sparse_source.characters_per_second(take.cues, duration_ms)
+    rate = sparse_source.characters_per_second(take.cues, exact_duration_ms)
     if rate is None:
         raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
     return AttemptMetrics(
         duration_ms=duration_ms,
+        duration_frame_count=frame_count,
+        sample_rate_hz=sample_rate_hz,
         character_count=count,
         characters_per_second=f"{rate:.3f}",
-        sparse=sparse_source.is_sparse(take.cues, duration_ms),
+        sparse=sparse_source.is_sparse(take.cues, exact_duration_ms),
     )
 
 
@@ -150,7 +202,7 @@ def _candidate_for_take(
 ) -> sparse_source.SourceCandidate:
     return sparse_source.SourceCandidate(
         cues=take.cues,
-        duration_ms=take.duration_ms,
+        duration_ms=_exact_duration_ms(take),
         invalid=False,
     )
 
@@ -220,7 +272,9 @@ def reused_attempt(source_sha256: str) -> AttemptRecord:
 def _density_table(report: Mapping[str, object]) -> bytes:
     """Render deterministic path-free density evidence for a person."""
 
-    measured: list[tuple[Fraction, str, int, Mapping[str, object], bool, str]] = []
+    measured: list[
+        tuple[Fraction, Fraction, str, int, Mapping[str, object], bool, str]
+    ] = []
     unknown: list[tuple[str, int, bool, str]] = []
     for take_value in report["takes"]:
         take = take_value
@@ -233,11 +287,19 @@ def _density_table(report: Mapping[str, object]) -> bytes:
             is_selected = attempt["sourceSha256"] == selected
             metrics = attempt["metrics"]
             duration_ms = metrics["durationMs"]
+            frame_count = metrics["durationFrameCount"]
+            sample_rate_hz = metrics["sampleRateHz"]
             character_count = metrics["characterCount"]
-            if isinstance(duration_ms, int) and isinstance(character_count, int):
+            if (
+                isinstance(duration_ms, int)
+                and isinstance(frame_count, int)
+                and isinstance(sample_rate_hz, int)
+                and isinstance(character_count, int)
+            ):
                 measured.append(
                     (
-                        Fraction(character_count * 1000, duration_ms),
+                        Fraction(character_count * sample_rate_hz, frame_count),
+                        Fraction(frame_count, sample_rate_hz),
                         take_id,
                         ordinal,
                         metrics,
@@ -248,7 +310,7 @@ def _density_table(report: Mapping[str, object]) -> bytes:
             else:
                 unknown.append((take_id, ordinal, is_selected, shared))
 
-    measured.sort(key=lambda item: (item[0], item[1], item[2]))
+    measured.sort(key=lambda item: (item[0], item[2], item[3]))
     threshold = Fraction(
         int(sparse_source.SPARSE_CHARACTERS_PER_SECOND * 1000), 1000
     )
@@ -258,17 +320,37 @@ def _density_table(report: Mapping[str, object]) -> bytes:
         f"profileId\t{report['profileId']}",
         f"language\t{report['runSettings']['language']}",
         f"voiceActivity\t{report['runSettings']['voiceActivity']}",
-        "density\tcharacters\tseconds\tsparse\ttakeId\tattempt\tselected\tsharedAlternativeWith",
+        "row\tdensity\tcharacters\tseconds\tsparse\ttakeId\tattempt\tselected\tsharedAlternativeWith",
     ]
 
+    def exact_decimal(value: Fraction) -> str:
+        denominator = value.denominator
+        twos = fives = 0
+        while denominator % 2 == 0:
+            denominator //= 2
+            twos += 1
+        while denominator % 5 == 0:
+            denominator //= 5
+            fives += 1
+        if denominator != 1:
+            return f"{value.numerator}/{value.denominator}"
+        places = max(twos, fives)
+        scaled = value.numerator * (10**places) // value.denominator
+        if places == 0:
+            return str(scaled)
+        digits = str(abs(scaled)).zfill(places + 1)
+        sign = "-" if scaled < 0 else ""
+        return f"{sign}{digits[:-places]}.{digits[-places:]}"
+
     def append_measured(row) -> None:
-        _rate, take_id, ordinal, metrics, selected, shared = row
+        _rate, exact_seconds, take_id, ordinal, metrics, selected, shared = row
         lines.append(
             "\t".join(
                 (
+                    "SOURCE",
                     str(metrics["charactersPerSecond"]),
                     str(metrics["characterCount"]),
-                    f"{metrics['durationMs'] / 1000:.3f}",
+                    exact_decimal(exact_seconds),
                     "yes" if metrics["sparse"] else "no",
                     take_id,
                     str(ordinal),
@@ -281,13 +363,14 @@ def _density_table(report: Mapping[str, object]) -> bytes:
     for row in below:
         append_measured(row)
     lines.append(
-        f"THRESHOLD\t-\t{sparse_source.SPARSE_MINIMUM_DURATION_MS / 1000:.3f}\t-\t-\t-\t-\t-"
+        f"THRESHOLD\t{sparse_source.SPARSE_CHARACTERS_PER_SECOND:.3f}\t-\t"
+        f"{sparse_source.SPARSE_MINIMUM_DURATION_MS / 1000:.3f}\t-\t-\t-\t-\t-"
     )
     for row in at_or_above:
         append_measured(row)
     for take_id, ordinal, selected, shared in sorted(unknown):
         lines.append(
-            f"unknown\t-\t-\t-\t{take_id}\t{ordinal}\t"
+            f"UNKNOWN\tunknown\t-\t-\t-\t{take_id}\t{ordinal}\t"
             f"{'yes' if selected else 'no'}\t{shared}"
         )
     return ("\n".join(lines) + "\n").encode("utf-8")
@@ -311,6 +394,8 @@ def _validate_attempt_metrics(attempt: Mapping[str, object]) -> None:
         metrics.get(name)
         for name in (
             "durationMs",
+            "durationFrameCount",
+            "sampleRateHz",
             "characterCount",
             "charactersPerSecond",
             "sparse",
@@ -321,11 +406,17 @@ def _validate_attempt_metrics(attempt: Mapping[str, object]) -> None:
         if any(value is not None for value in values):
             raise ValueError
         return
-    duration_ms, character_count, rate, sparse = values
+    duration_ms, frame_count, sample_rate_hz, character_count, rate, sparse = values
     if (
         isinstance(duration_ms, bool)
         or not isinstance(duration_ms, int)
         or duration_ms <= 0
+        or isinstance(frame_count, bool)
+        or not isinstance(frame_count, int)
+        or frame_count <= 0
+        or isinstance(sample_rate_hz, bool)
+        or not isinstance(sample_rate_hz, int)
+        or sample_rate_hz <= 0
         or isinstance(character_count, bool)
         or not isinstance(character_count, int)
         or character_count < 0
@@ -333,9 +424,12 @@ def _validate_attempt_metrics(attempt: Mapping[str, object]) -> None:
         or not isinstance(sparse, bool)
     ):
         raise ValueError
-    exact_rate = character_count * 1000 / duration_ms
+    exact_duration_ms = Fraction(frame_count * 1000, sample_rate_hz)
+    if duration_ms != (frame_count * 1000 + sample_rate_hz - 1) // sample_rate_hz:
+        raise ValueError
+    exact_rate = Fraction(character_count * sample_rate_hz, frame_count)
     expected_sparse = (
-        duration_ms >= sparse_source.SPARSE_MINIMUM_DURATION_MS
+        exact_duration_ms >= sparse_source.SPARSE_MINIMUM_DURATION_MS
         and exact_rate < sparse_source.SPARSE_CHARACTERS_PER_SECOND
     )
     if rate != f"{exact_rate:.3f}" or sparse is not expected_sparse:
@@ -429,9 +523,15 @@ def _validate_v2_relationships(
         else:
             if any(attempt["settings"] != run_settings for attempt in attempts):
                 raise ValueError
-            choice = sparse_source.choose_source(
-                tuple(_reported_candidate(attempt["outcome"]) for attempt in attempts)
+            candidates = tuple(
+                _reported_candidate(attempt["outcome"]) for attempt in attempts
             )
+            if any(
+                not sparse_source.requires_retry(candidate)
+                for candidate in candidates[:-1]
+            ):
+                raise ValueError
+            choice = sparse_source.choose_source(candidates)
             expected_source = (
                 None
                 if choice.index is None
@@ -469,17 +569,27 @@ def _validate_v2_relationships(
         elif bundled["status"] != take["status"]:
             raise ValueError
         selected_attempt = attempts[selected_ordinal - 1]
+        if take["status"] != "reused" and (
+            selected_attempt["outcome"] not in {"completed", "sparse"}
+            or bundled["status"] != "completed"
+            or not bundled["cues"]
+        ):
+            raise ValueError
         metrics = selected_attempt["metrics"]
         if metrics["durationMs"] is not None:
             count = sparse_source.transcript_characters(bundled["cues"])
+            exact_duration_ms = Fraction(
+                metrics["durationFrameCount"] * 1000,
+                metrics["sampleRateHz"],
+            )
             rate = sparse_source.characters_per_second(
-                bundled["cues"], metrics["durationMs"]
+                bundled["cues"], exact_duration_ms
             )
             if (
                 metrics["characterCount"] != count
                 or metrics["charactersPerSecond"] != f"{rate:.3f}"
                 or metrics["sparse"]
-                != sparse_source.is_sparse(bundled["cues"], metrics["durationMs"])
+                != sparse_source.is_sparse(bundled["cues"], exact_duration_ms)
             ):
                 raise ValueError
 
@@ -959,6 +1069,81 @@ def _decode_json(encoded: bytes) -> object:
         raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
 
 
+def validate_transcription_result_bytes(
+    *,
+    bundle_bytes: bytes,
+    report_bytes: bytes,
+    manifest_bytes: bytes,
+    density_table_bytes: bytes | None,
+) -> BuiltTranscriptionResult:
+    """Validate one result family from exact bytes, independent of storage."""
+
+    bundle = _decode_json(bundle_bytes)
+    report = _decode_json(report_bytes)
+    manifest = _decode_json(manifest_bytes)
+    if not all(isinstance(payload, dict) for payload in (bundle, report, manifest)):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    assert isinstance(bundle, dict)
+    assert isinstance(report, dict)
+    assert isinstance(manifest, dict)
+    try:
+        canonical_bundle = transcribe_takes.encode_transcript_bundle(bundle).encode(
+            "utf-8"
+        )
+        manifest_version = manifest.get("schemaVersion")
+        report_version = report.get("schemaVersion")
+        if (
+            manifest_version == "tritrack.transcription-result-manifest/v1"
+            and report_version == "tritrack.transcription-report/v1"
+            and density_table_bytes is None
+        ):
+            canonical_report = _canonical_bytes("transcription-report-v1", report)
+            canonical_manifest = _canonical_bytes(
+                "transcription-result-manifest-v1", manifest
+            )
+            canonical_density_table = None
+        elif (
+            manifest_version == "tritrack.transcription-result-manifest/v2"
+            and report_version == "tritrack.transcription-report/v2"
+            and density_table_bytes is not None
+        ):
+            canonical_report = _canonical_bytes("transcription-report-v2", report)
+            canonical_manifest = _canonical_bytes(
+                "transcription-result-manifest-v2", manifest
+            )
+            canonical_density_table = _density_table(report)
+        else:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, ValidationError) as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    if (
+        bundle_bytes != canonical_bundle
+        or report_bytes != canonical_report
+        or manifest_bytes != canonical_manifest
+        or manifest["bundle"]["sha256"]
+        != hashlib.sha256(bundle_bytes).hexdigest()
+        or manifest["report"]["sha256"]
+        != hashlib.sha256(report_bytes).hexdigest()
+        or density_table_bytes != canonical_density_table
+        or (
+            density_table_bytes is not None
+            and manifest["densityTable"]["sha256"]
+            != hashlib.sha256(density_table_bytes).hexdigest()
+        )
+    ):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    validate_result_relationships(bundle, report)
+    return BuiltTranscriptionResult(
+        bundle=bundle,
+        report=report,
+        manifest=manifest,
+        bundle_bytes=bundle_bytes,
+        report_bytes=report_bytes,
+        manifest_bytes=manifest_bytes,
+        density_table_bytes=density_table_bytes,
+    )
+
+
 def load_transcription_result(result_dir: Path) -> BuiltTranscriptionResult:
     """Load an exact immutable result and verify every canonical byte and hash."""
 
@@ -984,65 +1169,7 @@ def load_transcription_result(result_dir: Path) -> BuiltTranscriptionResult:
         if entries == _RESULT_FILE_NAMES_V2
         else None
     )
-    bundle = _decode_json(bundle_bytes)
-    report = _decode_json(report_bytes)
-    manifest = _decode_json(manifest_bytes)
-    if not all(isinstance(payload, dict) for payload in (bundle, report, manifest)):
-        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
-    assert isinstance(bundle, dict)
-    assert isinstance(report, dict)
-    assert isinstance(manifest, dict)
-    try:
-        canonical_bundle = transcribe_takes.encode_transcript_bundle(bundle).encode(
-            "utf-8"
-        )
-        manifest_version = manifest.get("schemaVersion")
-        report_version = report.get("schemaVersion")
-        if (
-            manifest_version == "tritrack.transcription-result-manifest/v1"
-            and report_version == "tritrack.transcription-report/v1"
-            and entries == _RESULT_FILE_NAMES
-        ):
-            canonical_report = _canonical_bytes("transcription-report-v1", report)
-            canonical_manifest = _canonical_bytes(
-                "transcription-result-manifest-v1", manifest
-            )
-            canonical_density_table = None
-        elif (
-            manifest_version == "tritrack.transcription-result-manifest/v2"
-            and report_version == "tritrack.transcription-report/v2"
-            and entries == _RESULT_FILE_NAMES_V2
-        ):
-            canonical_report = _canonical_bytes("transcription-report-v2", report)
-            canonical_manifest = _canonical_bytes(
-                "transcription-result-manifest-v2", manifest
-            )
-            canonical_density_table = _density_table(report)
-        else:
-            raise ValueError
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
-    if (
-        bundle_bytes != canonical_bundle
-        or report_bytes != canonical_report
-        or manifest_bytes != canonical_manifest
-        or manifest["bundle"]["sha256"]
-        != hashlib.sha256(bundle_bytes).hexdigest()
-        or manifest["report"]["sha256"]
-        != hashlib.sha256(report_bytes).hexdigest()
-        or density_table_bytes != canonical_density_table
-        or (
-            density_table_bytes is not None
-            and manifest["densityTable"]["sha256"]
-            != hashlib.sha256(density_table_bytes).hexdigest()
-        )
-    ):
-        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
-    validate_result_relationships(bundle, report)
-    return BuiltTranscriptionResult(
-        bundle=bundle,
-        report=report,
-        manifest=manifest,
+    return validate_transcription_result_bytes(
         bundle_bytes=bundle_bytes,
         report_bytes=report_bytes,
         manifest_bytes=manifest_bytes,

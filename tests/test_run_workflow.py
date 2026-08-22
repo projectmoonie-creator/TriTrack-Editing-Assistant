@@ -885,6 +885,52 @@ class PrepareAlignTransitionTest(unittest.TestCase):
             ):
                 run_workflow.load_bundle(prepared.root)
 
+    def test_embedded_authority_rejects_mixed_v1_manifest_and_v2_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prepared, _sources, _model = self.prepare(Path(temporary))
+            artifacts = {
+                name: artifact.encoded for name, artifact in prepared.artifacts.items()
+                if name.startswith("transcription") or name == "transcriptBundle"
+            }
+            current = json.loads(artifacts["transcriptionResult"])
+            legacy = {
+                "schemaVersion": "tritrack.transcription-result-manifest/v1",
+                "bundle": current["bundle"],
+                "report": current["report"],
+            }
+            artifacts["transcriptionResult"] = transcription_result._canonical_bytes(
+                "transcription-result-manifest-v1", legacy
+            )
+            del artifacts["transcriptionDensity"]
+
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_ARTIFACT_INVALID"
+            ):
+                run_workflow._validate_transcription_authority(artifacts)
+
+    def test_embedded_authority_rejects_hash_valid_noncanonical_v2_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prepared, _sources, _model = self.prepare(Path(temporary))
+            artifacts = {
+                name: artifact.encoded for name, artifact in prepared.artifacts.items()
+                if name.startswith("transcription") or name == "transcriptBundle"
+            }
+            report = json.loads(artifacts["transcriptionReport"])
+            noncanonical = json.dumps(
+                report, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+            result = json.loads(artifacts["transcriptionResult"])
+            result["report"]["sha256"] = sha256(noncanonical)
+            artifacts["transcriptionReport"] = noncanonical
+            artifacts["transcriptionResult"] = transcription_result._canonical_bytes(
+                "transcription-result-manifest-v2", result
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "TRITRACK_RUN_ARTIFACT_INVALID"
+            ):
+                run_workflow._validate_transcription_authority(artifacts)
+
     def test_prepare_rejects_unsupported_subset_duplicate_and_late_change(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

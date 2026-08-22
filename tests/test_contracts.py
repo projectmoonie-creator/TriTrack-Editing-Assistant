@@ -385,6 +385,8 @@ VALID_CONTRACTS.update(
                             },
                             "metrics": {
                                 "durationMs": 60000,
+                                "durationFrameCount": 960000,
+                                "sampleRateHz": 16000,
                                 "characterCount": 180,
                                 "charactersPerSecond": "3.000",
                                 "sparse": False,
@@ -650,6 +652,8 @@ class ContractValidationTest(unittest.TestCase):
         payload = copy.deepcopy(VALID_CONTRACTS["transcription-report-v2"])
         payload["takes"][0]["attempts"][0]["metrics"] = {
             "durationMs": None,
+            "durationFrameCount": None,
+            "sampleRateHz": None,
             "characterCount": None,
             "charactersPerSecond": None,
             "sparse": None,

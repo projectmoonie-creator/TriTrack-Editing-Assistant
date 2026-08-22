@@ -50,11 +50,14 @@ recording practice.
 - Preserve exact v1 report, result-manifest, and run-manifest readers.
 - Publish new versioned report/result/run authority for density evidence rather
   than silently changing v1 schema bytes.
-- Record exact duration and character counts, a rounded readable density,
-  thresholds and recognition settings, the source the consumer selected,
-  retry/rescue/unrescued counts, and shared-alternative warnings.
+- Record exact normalized frame count and sample rate, character counts, a
+  rounded readable density, thresholds and recognition settings, the source
+  the consumer selected, retry/rescue/unrescued counts, and shared-alternative
+  warnings. Ceiling milliseconds remain separate cue-bound evidence and never
+  decide the 30-second sparse boundary.
 - Emit one deterministic human-readable density table beside the machine
-  record.
+  record, with both the rate and minimum-duration thresholds on its threshold
+  row.
 
 The clean-room starting constants are 1.0 content character per second and a
 30-second minimum. They are explicit, observable policy inputs to be
@@ -70,6 +73,11 @@ survives when nothing better exists. An invalid primary never survives and may
 adopt a merely sparse alternative. Retry and adoption use one choice policy,
 every decoded source records density evidence, unrescued retries remain
 visible, and two takes selecting the same alternative announce each other.
+Every non-final attempt must itself justify retry; the result validator rejects
+a fabricated attempt after a usable source and rejects an empty bundle take
+mislabelled as a selectable sparse source. Standalone and embedded-run readers
+share one exact-byte family, canonicality, hash, density, and relationship
+validator.
 
 ## Non-goals
 

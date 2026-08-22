@@ -459,50 +459,11 @@ def _validate_transcription_authority(
     if present != names:
         raise ValueError("TRITRACK_RUN_ARTIFACT_INVALID")
     try:
-        result = json.loads(artifacts["transcriptionResult"].decode("utf-8"))
-        bundle_payload = json.loads(artifacts["transcriptBundle"].decode("utf-8"))
-        report_payload = json.loads(
-            artifacts["transcriptionReport"].decode("utf-8")
-        )
-        if not isinstance(result, dict):
-            raise TypeError
-        if not isinstance(bundle_payload, dict) or not isinstance(report_payload, dict):
-            raise TypeError
-        bundle = result["bundle"]
-        report = result["report"]
-        if not isinstance(bundle, dict) or not isinstance(report, dict):
-            raise TypeError
-        if (
-            bundle["fileName"] != "transcript-bundle.json"
-            or report["fileName"] != "transcription-report.json"
-            or bundle["sha256"]
-            != hashlib.sha256(artifacts["transcriptBundle"]).hexdigest()
-            or report["sha256"]
-            != hashlib.sha256(artifacts["transcriptionReport"]).hexdigest()
-        ):
-            raise ValueError
-        result_version = result.get("schemaVersion")
-        if result_version == "tritrack.transcription-result-manifest/v1":
-            if "transcriptionDensity" in artifacts:
-                raise ValueError
-        elif result_version == "tritrack.transcription-result-manifest/v2":
-            density = result.get("densityTable")
-            if not isinstance(density, dict):
-                raise TypeError
-            density_bytes = artifacts.get("transcriptionDensity")
-            if (
-                density_bytes is None
-                or density["fileName"] != "transcription-density.txt"
-                or density["sha256"]
-                != hashlib.sha256(density_bytes).hexdigest()
-                or density_bytes
-                != transcription_result._density_table(report_payload)
-            ):
-                raise ValueError
-        else:
-            raise ValueError
-        transcription_result.validate_result_relationships(
-            bundle_payload, report_payload
+        transcription_result.validate_transcription_result_bytes(
+            bundle_bytes=artifacts["transcriptBundle"],
+            report_bytes=artifacts["transcriptionReport"],
+            manifest_bytes=artifacts["transcriptionResult"],
+            density_table_bytes=artifacts.get("transcriptionDensity"),
         )
     except (
         KeyError,

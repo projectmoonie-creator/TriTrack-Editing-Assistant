@@ -36,6 +36,8 @@ class TranscribedTake:
     status: str
     cues: tuple[dict[str, object], ...]
     duration_ms: int | None = None
+    duration_frame_count: int | None = None
+    sample_rate_hz: int | None = None
 
 
 def _object(value: object) -> Mapping[str, object]:
@@ -286,7 +288,7 @@ def _normalize_audio(
     _require_process(result, "TRITRACK_TRANSCRIBE_AUDIO_DECODE_FAILED")
 
 
-def _inspect_normalized_audio(path: Path) -> tuple[int, bool]:
+def _inspect_normalized_audio(path: Path) -> tuple[int, int, int, bool]:
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
@@ -301,10 +303,11 @@ def _inspect_normalized_audio(path: Path) -> tuple[int, bool]:
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = -1
             with wave.open(stream, "rb") as audio:
+                sample_rate_hz = audio.getframerate()
                 if (
                     audio.getnchannels() != 1
                     or audio.getsampwidth() != 2
-                    or audio.getframerate() != 16000
+                    or sample_rate_hz != 16000
                     or audio.getnframes() < 1
                 ):
                     raise ValueError("TRITRACK_TRANSCRIBE_AUDIO_INVALID")
@@ -331,8 +334,8 @@ def _inspect_normalized_audio(path: Path) -> tuple[int, bool]:
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-    duration_ms = (frame_count * 1000 + 15999) // 16000
-    return duration_ms, silent
+    duration_ms = (frame_count * 1000 + sample_rate_hz - 1) // sample_rate_hz
+    return duration_ms, frame_count, sample_rate_hz, silent
 
 
 def _run_whisper(
@@ -480,7 +483,9 @@ def transcribe_source(
             audio_path,
             ffmpeg_executable=ffmpeg_executable,
         )
-        duration_ms, silent = _inspect_normalized_audio(audio_path)
+        duration_ms, duration_frame_count, sample_rate_hz, silent = (
+            _inspect_normalized_audio(audio_path)
+        )
         _run_whisper(
             audio_path,
             model_path=selected_model,
@@ -510,6 +515,8 @@ def transcribe_source(
         status="empty" if silent else "completed",
         cues=tuple(cues),
         duration_ms=duration_ms,
+        duration_frame_count=duration_frame_count,
+        sample_rate_hz=sample_rate_hz,
     )
 
 

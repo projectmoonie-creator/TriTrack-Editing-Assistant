@@ -5,6 +5,7 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 
 SPARSE_CHARACTERS_PER_SECOND = 1.0
 SPARSE_MINIMUM_DURATION_MS = 30_000
@@ -15,7 +16,7 @@ class SourceCandidate:
     """One decoded source, without paths or engine state."""
 
     cues: Sequence[Mapping[str, object] | None]
-    duration_ms: float | None
+    duration_ms: float | Fraction | None
     invalid: bool = False
 
 
@@ -45,13 +46,13 @@ def transcript_characters(
 
 def characters_per_second(
     cues: Sequence[Mapping[str, object] | None] | None,
-    duration_ms: float | None,
-) -> float | None:
+    duration_ms: float | Fraction | None,
+) -> float | Fraction | None:
     """Return content density when duration is usable."""
 
     if (
         isinstance(duration_ms, bool)
-        or not isinstance(duration_ms, (int, float))
+        or not isinstance(duration_ms, (int, float, Fraction))
         or duration_ms <= 0
     ):
         return None
@@ -60,13 +61,13 @@ def characters_per_second(
 
 def is_sparse(
     cues: Sequence[Mapping[str, object] | None] | None,
-    duration_ms: float | None,
+    duration_ms: float | Fraction | None,
 ) -> bool:
     """Return whether a long source retained too little spoken content."""
 
     if (
         isinstance(duration_ms, bool)
-        or not isinstance(duration_ms, (int, float))
+        or not isinstance(duration_ms, (int, float, Fraction))
         or duration_ms < SPARSE_MINIMUM_DURATION_MS
     ):
         return False

@@ -135,7 +135,9 @@ not claim bit-identical inference across engine versions, models, or machines.
 
 Recognized cues are NFC-normalized, single-spaced, ordered, and bounded to
 integer milliseconds. A bounded final whisper.cpp timestamp pad is clipped to
-the real PCM duration. Exact digital silence may produce an empty take; the
+the ceiling-millisecond PCM duration, while exact normalized frame count and
+sample rate drive sparse thresholds and density. Exact digital silence may
+produce an empty take; the
 observed `[BLANK_AUDIO]` engine sentinel is discarded only after the PCM has
 independently been proven all-zero. Non-silent empty output, text over proven
 silence, malformed timing, leaked control tokens, or repeated structural
@@ -153,9 +155,11 @@ this command.
 
 The bundle contains transcript text and source basenames, so keep the complete
 result directory under the same local custody as the media. The report and
-manifest contain no cue text or local path. The density table records every
-attempt's exact character and duration measurements, the active threshold,
-the selected source, and any shared-alternative warning, sorted by density.
+manifest contain no cue text or local path. The density report records every
+attempt's exact character count plus exact frame-count／sample-rate duration;
+its millisecond field is the ceiling used for cue bounds. The human table
+renders exact seconds, both active thresholds, the selected source, and any
+shared-alternative warning, sorted by exact rational density.
 Its bytes are bound by the result manifest. `--json` prints only path-free
 counts and the three existing authority hashes; it does not print transcript
 text.

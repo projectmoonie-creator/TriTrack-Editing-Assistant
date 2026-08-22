@@ -18,19 +18,25 @@ transcript, receipt, identifier, or path was read.
 - The existing in-cue invention guard remains unchanged and green.
 - `sparse_source.py` independently implements the public density verdict and
   one source-choice ladder. It counts Unicode letters, numbers, and symbols;
-  uses exact media milliseconds; applies the strict-below 1.0 character／second
-  rule only at 30 seconds or longer; and does not guess for unknown durations.
+  uses exact normalized PCM frame count and sample rate; applies the
+  strict-below 1.0 character／second rule only at 30 seconds or longer; and does
+  not guess for unknown durations. Ceiling milliseconds remain available only
+  for cue clipping and cannot promote 29.9999375 seconds to the threshold.
 - Both the retry trigger and selected-source adoption call that policy. A
   sparse primary yields to a usable declared alternative, survives when no
   source is better, and an invalid primary never survives.
-- `transcription-report-v2` records every attempted source's exact duration and
-  character count, readable density, sparse verdict, selected source,
-  thresholds, settings, retry／rescue／unrescued counts, and shared-alternative
-  warnings without cue text or local paths.
+- `transcription-report-v2` records every attempted source's exact frame count,
+  sample rate, and character count, plus ceiling milliseconds, readable
+  density, sparse verdict, selected source, thresholds, settings,
+  retry／rescue／unrescued counts, and shared-alternative warnings without cue
+  text or local paths.
 - `transcription-result-manifest-v2` binds the unchanged
   `transcript-bundle-v1`, report v2, and deterministic human-readable
   `transcription-density.txt`. New prepared runs carry all four artifacts in
   `run-manifest-v3`; exact v1 result and v1／v2 run readers remain supported.
+- Standalone and embedded-run loading use the same byte validator. Mixed v1／v2
+  families, noncanonical authorities, stale density, post-usable retries, and
+  selected empty sources fail closed even when every changed hash is resigned.
 - Voice activity remains `off`. No VAD switch, model path, model pin, download,
   provider call, upload, or network boundary was added.
 
@@ -45,8 +51,18 @@ focused suites passed after each minimal change.
 
 The first complete-suite run after implementation passed 333 of 334 tests and
 failed only the closed distribution inventory, which correctly detected the
-new package members. Final clean verification results and artifact hashes are
-recorded below after the inventory is updated.
+new package members. After that inventory was updated, the implementation
+target passed all 337 tests, Ruff, compilation, and diff hygiene.
+
+The first source-grounded Codex review then reproduced six required findings
+against exact target `7232267a236cbb35f210d5088cb02ca69201d473`: retry after
+a usable source, selected empty-as-sparse drift, mixed／noncanonical embedded
+result families, ceiling-millisecond threshold drift, a threshold row missing
+the density value, and two semantic tests that failed prematurely on stale
+density bytes. Each counterexample received a dedicated RED test before its
+bounded fix. The corrected focused suites passed 92 tests, followed by a
+complete 344-test pass; Ruff, compilation, diff hygiene, and the final clean
+release gate are rerun at closeout.
 
 ## Claude convergence supplement
 

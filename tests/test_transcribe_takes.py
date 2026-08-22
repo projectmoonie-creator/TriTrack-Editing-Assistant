@@ -13,7 +13,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tritrack_editing_assistant import contracts, transcribe_takes
+from tritrack_editing_assistant import (
+    contracts,
+    sparse_source,
+    transcribe_takes,
+    transcription_result,
+)
 
 
 class TranscriptCanonicalizationTest(unittest.TestCase):
@@ -322,7 +327,9 @@ class LocalTranscriptionWorkflowTest(unittest.TestCase):
         path.chmod(0o755)
         return path
 
-    def write_ffmpeg(self, root: Path, *, sample: int) -> Path:
+    def write_ffmpeg(
+        self, root: Path, *, sample: int, frame_count: int = 16000
+    ) -> Path:
         return self.write_executable(
             root,
             "invented-ffmpeg",
@@ -334,7 +341,7 @@ class LocalTranscriptionWorkflowTest(unittest.TestCase):
                 output.setnchannels(1)
                 output.setsampwidth(2)
                 output.setframerate(16000)
-                output.writeframes(bytes([{sample & 255}, {(sample >> 8) & 255}]) * 16000)
+                output.writeframes(bytes([{sample & 255}, {(sample >> 8) & 255}]) * {frame_count})
             """,
         )
 
@@ -425,6 +432,47 @@ class LocalTranscriptionWorkflowTest(unittest.TestCase):
             "decoded source duration is not carried to orchestration",
         )
         self.assertEqual(result.duration_ms, 1000)
+        self.assertEqual(result.duration_frame_count, 16000)
+        self.assertEqual(result.sample_rate_hz, 16000)
+
+    def test_sub_millisecond_remainder_keeps_short_media_exempt_from_sparse_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media = root / "invented.mov"
+            model = root / "invented-model.bin"
+            media.write_bytes(b"invented source")
+            model.write_bytes(b"invented model")
+            ffmpeg = self.write_ffmpeg(root, sample=1, frame_count=479_999)
+            whisper = self.write_whisper(
+                root,
+                transcription=[
+                    {
+                        "offsets": {"from": 0, "to": 500},
+                        "text": "一",
+                    }
+                ],
+            )
+
+            result = transcribe_takes.transcribe_source(
+                media,
+                take_id=media.name,
+                source_sha256=transcribe_takes._sha256_file(media),
+                model_path=model,
+                model_sha256=transcribe_takes._sha256_file(model),
+                language="zh",
+                ffmpeg_executable=str(ffmpeg),
+                whisper_executable=str(whisper),
+            )
+
+        self.assertEqual(result.duration_ms, 30000)
+        self.assertEqual(result.duration_frame_count, 479_999)
+        self.assertEqual(result.sample_rate_hz, 16_000)
+        self.assertFalse(
+            sparse_source.is_sparse(
+                result.cues,
+                transcription_result._exact_duration_ms(result),
+            )
+        )
 
     def test_single_pass_publishes_stable_path_free_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

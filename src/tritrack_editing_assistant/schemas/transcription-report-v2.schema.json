@@ -112,9 +112,11 @@
     "unknownMetrics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["durationMs", "characterCount", "charactersPerSecond", "sparse"],
+      "required": ["durationMs", "durationFrameCount", "sampleRateHz", "characterCount", "charactersPerSecond", "sparse"],
       "properties": {
         "durationMs": {"type": "null"},
+        "durationFrameCount": {"type": "null"},
+        "sampleRateHz": {"type": "null"},
         "characterCount": {"type": "null"},
         "charactersPerSecond": {"type": "null"},
         "sparse": {"type": "null"}
@@ -123,9 +125,11 @@
     "measuredMetrics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["durationMs", "characterCount", "charactersPerSecond", "sparse"],
+      "required": ["durationMs", "durationFrameCount", "sampleRateHz", "characterCount", "charactersPerSecond", "sparse"],
       "properties": {
         "durationMs": {"type": "integer", "minimum": 1},
+        "durationFrameCount": {"type": "integer", "minimum": 1},
+        "sampleRateHz": {"const": 16000},
         "characterCount": {"type": "integer", "minimum": 0},
         "charactersPerSecond": {
           "type": "string",
