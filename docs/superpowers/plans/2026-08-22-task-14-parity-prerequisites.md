@@ -19,7 +19,7 @@
 - Create `src/tritrack_editing_assistant/schemas/transcription-report-v1.schema.json`: path-free and text-free per-run/per-take provenance.
 - Create `src/tritrack_editing_assistant/schemas/transcription-result-manifest-v1.schema.json`: exact bundle/report file hashes.
 - Create `src/tritrack_editing_assistant/schemas/run-manifest-v2.schema.json`: immutable-run authority that retains all three transcription result artifacts.
-- Modify `src/tritrack_editing_assistant/contracts.py`: register the four closed schema names.
+- Modify `src/tritrack_editing_assistant/contracts.py`: register the three mechanism schema names in Task 3 and `run-manifest-v2` in Task 8.
 - Modify `src/tritrack_editing_assistant/transcribe_takes.py`: expose a one-source decode seam and route anomaly verdicts without changing bundle v1.
 - Modify `src/tritrack_editing_assistant/sync_scan.py`: derive a drift prior, select relay sources, and publish v2.
 - Modify `src/tritrack_editing_assistant/string_out.py`: read both map versions and construct relay intersections.
@@ -218,31 +218,27 @@ git commit -m "feat: select drift-aware relay sources"
 - Create: `src/tritrack_editing_assistant/schemas/sync-map-v2.schema.json`
 - Create: `src/tritrack_editing_assistant/schemas/transcription-report-v1.schema.json`
 - Create: `src/tritrack_editing_assistant/schemas/transcription-result-manifest-v1.schema.json`
-- Create: `src/tritrack_editing_assistant/schemas/run-manifest-v2.schema.json`
 - Modify: `src/tritrack_editing_assistant/contracts.py:12-27`
 - Modify: `tests/test_contracts.py`
 
-- [ ] **Step 1: Write RED registry and schema tests**
+- [x] **Step 1: Write RED registry and schema tests**
 
-Assert the four exact contract names are present, their schema versions
+Assert the three exact contract names are present, their schema versions
 resolve in both directions, the locked examples above validate, and added
 keys, cue text in a report, relative/slashed file names, invalid status-setting
 combinations, duplicate take IDs, and duplicate media identities fail.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `venv/bin/python -m unittest tests.test_contracts -v`
 
 Expected: FAIL because the closed registry does not contain the new names.
 
-- [ ] **Step 3: Add the four exact Draft 2020-12 schemas and registry names**
+- [x] **Step 3: Add the three exact Draft 2020-12 schemas and registry names**
 
 All objects use `additionalProperties: false`. All SHA-256 fields use lowercase
 64-hex patterns. Report settings use enums so `off`, `on`, and `unknown` cannot
-be confused with booleans or omission. Run-manifest-v2 is structurally v1 for
-aligned and finished phases; its prepared phase additionally requires
-`transcriptionReport` and `transcriptionResult`. Keep the v1 schema bytes
-unchanged and pin that fact in a regression.
+be confused with booleans or omission.
 
 - [ ] **Step 4: Verify GREEN and packaged-resource access**
 
@@ -479,6 +475,7 @@ git commit -m "feat: retry and degrade transcription takes"
 - Modify: `src/tritrack_editing_assistant/cli.py:225-267,818-852,1024-1045`
 - Modify: `src/tritrack_editing_assistant/run_workflow.py:29-80,256-284,520-720`
 - Create: `src/tritrack_editing_assistant/schemas/run-manifest-v2.schema.json`
+- Modify: `src/tritrack_editing_assistant/contracts.py`
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_run_workflow.py`
 
@@ -520,7 +517,9 @@ pass the same `TranscriptionSettings` value and call
 Emit run-manifest-v2 for new runs and leave run-manifest-v1 unchanged/readable.
 The v2 prepared branch requires the two text-free artifacts in addition to the
 bundle. Update exact-entry validation, stage output hashes, summaries, and
-source `transcribed` values so failed/excluded takes are false.
+source `transcribed` values so failed/excluded takes are false. Register v2 only
+when this producer and consumer land together; keep the v1 schema bytes
+unchanged and pin that fact in a regression.
 
 - [ ] **Step 6: Verify GREEN**
 

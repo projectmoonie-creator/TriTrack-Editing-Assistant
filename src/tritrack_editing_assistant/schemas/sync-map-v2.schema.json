@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tritrack.dev/schemas/sync-map-v2.schema.json",
+  "title": "TriTrack relay synchronization map v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profileId", "driftPrior", "groups", "singles", "warnings"],
+  "properties": {
+    "schemaVersion": {"const": "tritrack.sync-map/v2"},
+    "profileId": {"type": "string", "minLength": 1},
+    "driftPrior": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/driftPrior"}
+      ]
+    },
+    "groups": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/group"},
+      "uniqueItems": true
+    },
+    "singles": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/single"},
+      "uniqueItems": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/warning"}
+    }
+  },
+  "$defs": {
+    "mediaId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^/\\\\\\r\\n]+$"
+    },
+    "startedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "driftPrior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["centreSeconds", "toleranceSeconds", "sampleCount"],
+      "properties": {
+        "centreSeconds": {"type": "number"},
+        "toleranceSeconds": {"type": "number", "minimum": 2.0, "maximum": 10.0},
+        "sampleCount": {"type": "integer", "minimum": 5}
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera", "mediaId", "durationSeconds", "startedAt"],
+      "properties": {
+        "camera": {"const": "A"},
+        "mediaId": {"$ref": "#/$defs/mediaId"},
+        "durationSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "startedAt": {"$ref": "#/$defs/startedAt"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "camera",
+        "mediaId",
+        "offsetFromAnchorSeconds",
+        "durationSeconds",
+        "confidence",
+        "overlapSeconds",
+        "match",
+        "startedAt"
+      ],
+      "properties": {
+        "camera": {"const": "B"},
+        "mediaId": {"$ref": "#/$defs/mediaId"},
+        "offsetFromAnchorSeconds": {"type": "number"},
+        "durationSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "confidence": {"type": "number", "minimum": 0},
+        "overlapSeconds": {"type": "number", "minimum": 3.0},
+        "match": {"enum": ["correlation", "drift-prior"]},
+        "startedAt": {"$ref": "#/$defs/startedAt"}
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "anchor", "sources", "audioMaster"],
+      "properties": {
+        "groupId": {"type": "string", "pattern": "^group-[0-9]{3,}$"},
+        "anchor": {"$ref": "#/$defs/anchor"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/source"},
+          "uniqueItems": true
+        },
+        "audioMaster": {"enum": ["A", "B"]}
+      }
+    },
+    "single": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera", "mediaId"],
+      "properties": {
+        "camera": {"enum": ["A", "B"]},
+        "mediaId": {"$ref": "#/$defs/mediaId"}
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "mediaId": {"$ref": "#/$defs/mediaId"}
+      }
+    }
+  }
+}

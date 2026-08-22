@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -136,7 +138,39 @@ class TranscriptionResultTest(unittest.TestCase):
         self.assertEqual(attempt.settings.voice_activity, "unknown")
         self.assertEqual(attempt.settings.voice_activity_model, "unknown")
 
+    def test_standalone_result_publishes_manifest_last_exact_directory(self) -> None:
+        workflow = self.workflow()
+        self.assertTrue(
+            hasattr(workflow, "publish_transcription_result"),
+            "manifest-last result publisher is not implemented",
+        )
+        source = self.source("primary.mov", "a" * 64)
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda _source, take_id, _settings: self.completed(
+                take_id, "a" * 64
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "result"
+            workflow.publish_transcription_result(output, result)
+
+            self.assertEqual(
+                {entry.name for entry in output.iterdir()},
+                {
+                    "manifest.json",
+                    "transcript-bundle.json",
+                    "transcription-report.json",
+                },
+            )
+            self.assertEqual(
+                json.loads((output / "manifest.json").read_text(encoding="utf-8")),
+                result.manifest,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -262,8 +262,100 @@ VALID_CONTRACTS = {
     },
 }
 
+VALID_CONTRACTS.update(
+    {
+        "sync-map-v2": {
+            "schemaVersion": "tritrack.sync-map/v2",
+            "profileId": "uhd-2997-ndf-fcpxml-1.14",
+            "driftPrior": {
+                "centreSeconds": 8.0,
+                "toleranceSeconds": 2.0,
+                "sampleCount": 5,
+            },
+            "groups": [
+                {
+                    "groupId": "group-001",
+                    "anchor": {
+                        "camera": "A",
+                        "mediaId": "anchor.mov",
+                        "durationSeconds": 600.0,
+                        "startedAt": None,
+                    },
+                    "sources": [
+                        {
+                            "camera": "B",
+                            "mediaId": "relay.mov",
+                            "offsetFromAnchorSeconds": 0.0,
+                            "durationSeconds": 300.0,
+                            "confidence": 8.0,
+                            "overlapSeconds": 300.0,
+                            "match": "correlation",
+                            "startedAt": None,
+                        }
+                    ],
+                    "audioMaster": "A",
+                }
+            ],
+            "singles": [{"camera": "B", "mediaId": "single.mov"}],
+            "warnings": [],
+        },
+        "transcription-report-v1": {
+            "schemaVersion": "tritrack.transcription-report/v1",
+            "profileId": "whisper-cpp-cpu-no-fallback-v1",
+            "requestedTakeIds": ["take-001"],
+            "runSettings": {
+                "language": "zh",
+                "recognitionModelSha256": "f" * 64,
+                "voiceActivity": "off",
+                "voiceActivityModel": None,
+            },
+            "takes": [
+                {
+                    "takeId": "take-001",
+                    "status": "completed",
+                    "selectedSourceSha256": "a" * 64,
+                    "attempts": [
+                        {
+                            "ordinal": 1,
+                            "sourceSha256": "a" * 64,
+                            "outcome": "completed",
+                            "failureCode": None,
+                            "settings": {
+                                "language": "zh",
+                                "recognitionModelSha256": "f" * 64,
+                                "voiceActivity": "off",
+                                "voiceActivityModel": None,
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+        "transcription-result-manifest-v1": {
+            "schemaVersion": "tritrack.transcription-result-manifest/v1",
+            "bundle": {
+                "fileName": "transcript-bundle.json",
+                "sha256": "a" * 64,
+            },
+            "report": {
+                "fileName": "transcription-report.json",
+                "sha256": "b" * 64,
+            },
+        },
+    }
+)
+
 
 class ContractValidationTest(unittest.TestCase):
+    def test_task_14_contract_names_are_closed_and_installed(self):
+        self.assertTrue(
+            {
+                "sync-map-v2",
+                "transcription-report-v1",
+                "transcription-result-manifest-v1",
+            }.issubset(contracts.CONTRACT_NAMES)
+        )
+
     def test_all_declared_contracts_accept_their_minimum_valid_shape(self):
         for name, payload in VALID_CONTRACTS.items():
             with self.subTest(name=name):
@@ -400,6 +492,36 @@ class ContractValidationTest(unittest.TestCase):
         for payload in invalid_cases:
             with self.subTest(payload=payload), self.assertRaises(ValidationError):
                 contracts.validate_contract("run-manifest-v1", payload)
+
+    def test_task_14_report_rejects_text_paths_and_implicit_settings(self):
+        invalid_cases = []
+
+        with_text = copy.deepcopy(VALID_CONTRACTS["transcription-report-v1"])
+        with_text["takes"][0]["attempts"][0]["text"] = "not report authority"
+        invalid_cases.append(with_text)
+
+        with_path = copy.deepcopy(VALID_CONTRACTS["transcription-report-v1"])
+        with_path["takes"][0]["attempts"][0]["path"] = "/invented/source.mov"
+        invalid_cases.append(with_path)
+
+        missing_off_setting = copy.deepcopy(
+            VALID_CONTRACTS["transcription-report-v1"]
+        )
+        del missing_off_setting["runSettings"]["voiceActivity"]
+        invalid_cases.append(missing_off_setting)
+
+        for payload in invalid_cases:
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                contracts.validate_contract("transcription-report-v1", payload)
+
+    def test_task_14_result_manifest_rejects_unsafe_file_names(self):
+        payload = copy.deepcopy(
+            VALID_CONTRACTS["transcription-result-manifest-v1"]
+        )
+        payload["bundle"]["fileName"] = "../transcript-bundle.json"
+
+        with self.assertRaises(ValidationError):
+            contracts.validate_contract("transcription-result-manifest-v1", payload)
 
 
 if __name__ == "__main__":
