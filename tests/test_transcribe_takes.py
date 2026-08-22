@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -243,6 +244,22 @@ class TranscriptCanonicalizationTest(unittest.TestCase):
                 model_sha256="f" * 64,
                 engine_version="whisper.cpp version: 1.9.1",
             )
+
+    def test_exposes_hash_bound_one_source_decode_seam(self) -> None:
+        self.assertTrue(
+            hasattr(transcribe_takes, "transcribe_source"),
+            "one-source retry seam is not implemented",
+        )
+        parameters = inspect.signature(transcribe_takes.transcribe_source).parameters
+        self.assertTrue(
+            {
+                "source_sha256",
+                "model_sha256",
+                "take_id",
+                "model_path",
+                "language",
+            }.issubset(parameters)
+        )
 
 
 class LocalTranscriptionWorkflowTest(unittest.TestCase):

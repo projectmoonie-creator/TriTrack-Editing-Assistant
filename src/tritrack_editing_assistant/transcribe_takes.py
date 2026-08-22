@@ -443,6 +443,74 @@ def _publish_transcript_bundle(output_path: Path, bundle: object) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
+def transcribe_source(
+    source: Path,
+    *,
+    take_id: str,
+    source_sha256: str,
+    model_path: Path,
+    model_sha256: str,
+    language: str,
+    ffmpeg_executable: str = "ffmpeg",
+    whisper_executable: str = "whisper-cli",
+) -> TranscribedTake:
+    """Decode one hash-bound source for retry-capable orchestration."""
+
+    selected_source = _require_readable_file(
+        Path(source), "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE"
+    )
+    selected_model = _require_readable_file(
+        Path(model_path), "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE"
+    )
+    if (
+        _sha256_file(selected_source, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE")
+        != source_sha256
+        or _sha256_file(selected_model, "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE")
+        != model_sha256
+    ):
+        raise ValueError("TRITRACK_TRANSCRIPT_INPUT_CHANGED")
+
+    with tempfile.TemporaryDirectory(prefix="tritrack-transcribe-source-") as temporary:
+        scratch = Path(temporary)
+        audio_path = scratch / "audio.wav"
+        output_prefix = scratch / "whisper"
+        _normalize_audio(
+            selected_source,
+            audio_path,
+            ffmpeg_executable=ffmpeg_executable,
+        )
+        duration_ms, silent = _inspect_normalized_audio(audio_path)
+        _run_whisper(
+            audio_path,
+            model_path=selected_model,
+            language=language,
+            output_prefix=output_prefix,
+            whisper_executable=whisper_executable,
+        )
+        evidence = _load_engine_json(Path(f"{output_prefix}.json"))
+        cues = canonicalize_whisper_evidence(
+            evidence,
+            requested_language=language,
+            audio_duration_ms=duration_ms,
+            proven_silence=silent,
+        )
+        if (
+            _sha256_file(selected_source) != source_sha256
+            or _sha256_file(selected_model) != model_sha256
+        ):
+            raise ValueError("TRITRACK_TRANSCRIPT_INPUT_CHANGED")
+        if silent and cues:
+            raise ValueError("TRITRACK_TRANSCRIPT_SILENCE_TEXT_DETECTED")
+        if not silent and not cues:
+            raise ValueError("TRITRACK_TRANSCRIPT_EMPTY_UNPROVEN")
+    return TranscribedTake(
+        take_id=take_id,
+        source_sha256=source_sha256,
+        status="empty" if silent else "completed",
+        cues=tuple(cues),
+    )
+
+
 def transcribe_and_publish(
     media_paths: Sequence[Path],
     *,
@@ -480,49 +548,19 @@ def transcribe_and_publish(
         path: _sha256_file(path, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE")
         for path in media
     }
-    takes: list[TranscribedTake] = []
-    with tempfile.TemporaryDirectory(prefix="tritrack-transcribe-") as temporary:
-        scratch = Path(temporary)
-        for index, source in enumerate(sorted(media, key=lambda path: path.name), start=1):
-            audio_path = scratch / f"audio-{index:06d}.wav"
-            output_prefix = scratch / f"whisper-{index:06d}"
-            _normalize_audio(
-                source,
-                audio_path,
-                ffmpeg_executable=ffmpeg_executable,
-            )
-            duration_ms, silent = _inspect_normalized_audio(audio_path)
-            _run_whisper(
-                audio_path,
-                model_path=selected_model,
-                language=language,
-                output_prefix=output_prefix,
-                whisper_executable=whisper_executable,
-            )
-            evidence = _load_engine_json(Path(f"{output_prefix}.json"))
-            cues = canonicalize_whisper_evidence(
-                evidence,
-                requested_language=language,
-                audio_duration_ms=duration_ms,
-                proven_silence=silent,
-            )
-            if (
-                _sha256_file(source) != source_hashes[source]
-                or _sha256_file(selected_model) != model_sha256
-            ):
-                raise ValueError("TRITRACK_TRANSCRIPT_INPUT_CHANGED")
-            if silent and cues:
-                raise ValueError("TRITRACK_TRANSCRIPT_SILENCE_TEXT_DETECTED")
-            if not silent and not cues:
-                raise ValueError("TRITRACK_TRANSCRIPT_EMPTY_UNPROVEN")
-            takes.append(
-                TranscribedTake(
-                    take_id=source.name,
-                    source_sha256=source_hashes[source],
-                    status="empty" if silent else "completed",
-                    cues=tuple(cues),
-                )
-            )
+    takes = [
+        transcribe_source(
+            source,
+            take_id=source.name,
+            source_sha256=source_hashes[source],
+            model_path=selected_model,
+            model_sha256=model_sha256,
+            language=language,
+            ffmpeg_executable=ffmpeg_executable,
+            whisper_executable=whisper_executable,
+        )
+        for source in sorted(media, key=lambda path: path.name)
+    ]
 
     if _sha256_file(selected_model) != model_sha256 or any(
         _sha256_file(source) != source_hashes[source] for source in media

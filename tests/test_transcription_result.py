@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import tempfile
 import unittest
@@ -22,6 +23,12 @@ class TranscriptionResultTest(unittest.TestCase):
             "public transcription_result module is not implemented",
         )
         return transcription_result
+
+    def test_exposes_hash_bound_local_command_orchestrator(self) -> None:
+        self.assertTrue(
+            hasattr(self.workflow(), "transcribe_and_publish_result"),
+            "local command orchestrator is not implemented",
+        )
 
     def settings(self):
         workflow = self.workflow()
@@ -138,6 +145,37 @@ class TranscriptionResultTest(unittest.TestCase):
         self.assertEqual(attempt.settings.voice_activity, "unknown")
         self.assertEqual(attempt.settings.voice_activity_model, "unknown")
 
+    def test_matching_reuse_skips_decode_and_keeps_unknown_attempt_settings(self) -> None:
+        workflow = self.workflow()
+        self.assertIn(
+            "reuse",
+            inspect.signature(workflow.build_transcription_result).parameters,
+            "immutable reuse input is not implemented",
+        )
+        source = self.source("primary.mov", "a" * 64)
+        prior = self.completed("take-001", "a" * 64)
+
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda *_arguments: self.fail("reused take must not decode"),
+            reuse={"take-001": prior},
+        )
+
+        self.assertEqual(result.bundle["takes"][0]["cues"][0]["text"], "Invented cue.")
+        report = result.report["takes"][0]
+        self.assertEqual(report["status"], "reused")
+        self.assertEqual(
+            report["attempts"][0]["settings"],
+            {
+                "language": "unknown",
+                "recognitionModelSha256": "unknown",
+                "voiceActivity": "unknown",
+                "voiceActivityModel": "unknown",
+            },
+        )
+
     def test_standalone_result_publishes_manifest_last_exact_directory(self) -> None:
         workflow = self.workflow()
         self.assertTrue(
@@ -170,6 +208,32 @@ class TranscriptionResultTest(unittest.TestCase):
                 json.loads((output / "manifest.json").read_text(encoding="utf-8")),
                 result.manifest,
             )
+
+    def test_loader_verifies_exact_hash_bound_result_for_reuse(self) -> None:
+        workflow = self.workflow()
+        self.assertTrue(
+            hasattr(workflow, "load_transcription_result"),
+            "immutable transcription result loader is not implemented",
+        )
+        source = self.source("primary.mov", "a" * 64)
+        result = workflow.build_transcription_result(
+            [self.request("take-001", source)],
+            settings=self.settings(),
+            engine_version="whisper.cpp invented-version",
+            decoder=lambda _source, take_id, _settings: self.completed(
+                take_id, "a" * 64
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "result"
+            workflow.publish_transcription_result(output, result)
+
+            loaded = workflow.load_transcription_result(output)
+
+        self.assertEqual(loaded.bundle, result.bundle)
+        self.assertEqual(loaded.report, result.report)
+        self.assertEqual(loaded.manifest, result.manifest)
 
 
 if __name__ == "__main__":

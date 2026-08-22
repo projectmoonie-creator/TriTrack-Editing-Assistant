@@ -19,7 +19,7 @@ from . import organizer as organizer_module
 from . import paper_edit as paper_module
 from . import run_workflow as run_module
 from . import sync_scan as sync_module
-from . import transcribe_takes as transcribe_module
+from . import transcription_result as transcription_result_module
 from . import validate_artifacts as validate_module
 
 EXIT_OK = 0
@@ -225,11 +225,20 @@ def _run_emit(arguments: argparse.Namespace) -> int:
 
 def _run_transcribe(arguments: argparse.Namespace) -> int:
     try:
-        payload = transcribe_module.transcribe_and_publish(
+        take_ids = {path.name for path in arguments.media}
+        alternatives: dict[str, list[Path]] = {}
+        for value in arguments.alternative_source:
+            take_id, separator, path_text = value.partition("=")
+            if not separator or take_id not in take_ids or not path_text:
+                raise ValueError("TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID")
+            alternatives.setdefault(take_id, []).append(Path(path_text))
+        result = transcription_result_module.transcribe_and_publish_result(
             arguments.media,
+            alternative_paths=alternatives,
             model_path=arguments.model,
             language=arguments.language,
-            output_path=arguments.output,
+            output_dir=arguments.output,
+            reuse_from=arguments.reuse_from,
         )
     except (TypeError, ValueError) as error:
         code = str(error).split(":", 1)[0]
@@ -247,20 +256,29 @@ def _run_transcribe(arguments: argparse.Namespace) -> int:
         if code in {
             "TRITRACK_TRANSCRIPT_LANGUAGE_INVALID",
             "TRITRACK_TRANSCRIPT_MEDIA_REQUIRED",
+            "TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID",
+            "TRITRACK_PATH_NOT_ABSOLUTE",
         }:
             return EXIT_USAGE
         return EXIT_DATA
 
     if arguments.json:
-        takes = payload["takes"]
+        takes = result.report["takes"]
         assert isinstance(takes, list)
-        bundle_sha256 = _output_sha256(arguments.output)
+        bundle = result.manifest["bundle"]
+        report = result.manifest["report"]
+        assert isinstance(bundle, dict)
+        assert isinstance(report, dict)
         summary = {
-            "schemaVersion": "tritrack.transcribe-summary/v1",
+            "schemaVersion": "tritrack.transcribe-summary/v2",
             "takeCount": len(takes),
             "completedCount": sum(take["status"] == "completed" for take in takes),
             "emptyCount": sum(take["status"] == "empty" for take in takes),
-            "bundleSha256": bundle_sha256,
+            "failedCount": sum(take["status"] == "failed" for take in takes),
+            "reusedCount": sum(take["status"] == "reused" for take in takes),
+            "bundleSha256": bundle["sha256"],
+            "reportSha256": report["sha256"],
+            "manifestSha256": hashlib.sha256(result.manifest_bytes).hexdigest(),
         }
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     return EXIT_OK
@@ -848,7 +866,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         required=True,
         type=Path,
-        help="create an absent transcript-bundle-v1 JSON path",
+        help="create an absent manifest-last transcription result directory",
+    )
+    transcribe.add_argument(
+        "--alternative-source",
+        action="append",
+        default=[],
+        metavar="TAKE_ID=ABSOLUTE_PATH",
+        help="retry one declared take with an explicitly mapped source",
+    )
+    transcribe.add_argument(
+        "--reuse-from",
+        type=Path,
+        help="reuse exact takes from an immutable prior result directory",
     )
     transcribe.add_argument(
         "--json",

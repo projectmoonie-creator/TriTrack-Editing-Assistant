@@ -44,7 +44,7 @@
         "recognitionModelSha256": {"$ref": "#/$defs/sha256"},
         "voiceActivity": {"enum": ["off", "on"]},
         "voiceActivityModel": {
-          "oneOf": [
+          "anyOf": [
             {"type": "null"},
             {"$ref": "#/$defs/modelName"}
           ]
@@ -70,7 +70,7 @@
         "recognitionModelSha256": {"oneOf": [{"const": "unknown"}, {"$ref": "#/$defs/sha256"}]},
         "voiceActivity": {"enum": ["off", "on", "unknown"]},
         "voiceActivityModel": {
-          "oneOf": [
+          "anyOf": [
             {"type": "null"},
             {"const": "unknown"},
             {"$ref": "#/$defs/modelName"}

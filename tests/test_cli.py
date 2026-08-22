@@ -768,7 +768,7 @@ class CliSmokeTest(unittest.TestCase):
     def test_transcribe_rejects_existing_output_before_reading_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            output = root / "transcript.json"
+            output = root / "transcription-result"
             output.write_text("sentinel", encoding="utf-8")
             completed = self.run_cli_unchecked(
                 "transcribe",
@@ -791,7 +791,7 @@ class CliSmokeTest(unittest.TestCase):
             root = Path(temporary)
             media = root / "Invented.MP4"
             model = root / "model.bin"
-            output = root / "transcript.json"
+            output = root / "transcription-result"
             media.write_bytes(b"invented-media")
             model.write_bytes(b"invented-model")
 
@@ -859,15 +859,29 @@ class CliSmokeTest(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(
+                output.is_dir(),
+                "transcribe must publish a manifest-last result directory",
+            )
             summary = json.loads(completed.stdout)
             self.assertEqual(
                 summary,
                 {
-                    "schemaVersion": "tritrack.transcribe-summary/v1",
+                    "schemaVersion": "tritrack.transcribe-summary/v2",
                     "takeCount": 1,
                     "completedCount": 1,
                     "emptyCount": 0,
-                    "bundleSha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                    "failedCount": 0,
+                    "reusedCount": 0,
+                    "bundleSha256": hashlib.sha256(
+                        (output / "transcript-bundle.json").read_bytes()
+                    ).hexdigest(),
+                    "reportSha256": hashlib.sha256(
+                        (output / "transcription-report.json").read_bytes()
+                    ).hexdigest(),
+                    "manifestSha256": hashlib.sha256(
+                        (output / "manifest.json").read_bytes()
+                    ).hexdigest(),
                 },
             )
             encoded_summary = json.dumps(summary)

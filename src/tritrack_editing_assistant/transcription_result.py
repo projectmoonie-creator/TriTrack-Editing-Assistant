@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
+import stat
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +22,11 @@ _FATAL_TAKE_ERRORS = frozenset(
         "TRITRACK_TRANSCRIPT_LANGUAGE_INVALID",
     }
 )
+_RESULT_FILE_LIMIT_BYTES = 16 * 1024 * 1024
+_RESULT_FILE_NAMES = frozenset(
+    {"manifest.json", "transcript-bundle.json", "transcription-report.json"}
+)
+_LANGUAGE = re.compile(r"^[a-z]{2,3}$")
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,7 @@ def build_transcription_result(
     settings: TranscriptionSettings,
     engine_version: str,
     decoder: Decoder,
+    reuse: Mapping[str, transcribe_takes.TranscribedTake] | None = None,
 ) -> BuiltTranscriptionResult:
     """Retry each take in source order and build deterministic authorities."""
 
@@ -175,6 +183,26 @@ def build_transcription_result(
     for request in ordered:
         if not request.sources:
             raise ValueError("TRITRACK_TRANSCRIPT_MEDIA_REQUIRED")
+        reusable = (reuse or {}).get(request.take_id)
+        if reusable is not None:
+            if (
+                reusable.take_id != request.take_id
+                or reusable.status not in {"completed", "empty"}
+                or reusable.source_sha256
+                not in {source.sha256 for source in request.sources}
+            ):
+                raise ValueError("TRITRACK_TRANSCRIPT_REUSE_MISMATCH")
+            attempt = reused_attempt(reusable.source_sha256)
+            completed.append(reusable)
+            reports.append(
+                {
+                    "takeId": request.take_id,
+                    "status": "reused",
+                    "selectedSourceSha256": reusable.source_sha256,
+                    "attempts": [_attempt_payload(attempt)],
+                }
+            )
+            continue
         attempts: list[AttemptRecord] = []
         selected: transcribe_takes.TranscribedTake | None = None
         for ordinal, source in enumerate(request.sources, start=1):
@@ -350,3 +378,231 @@ def publish_transcription_result(
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def _read_result_file(path: Path) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or not 0 < metadata.st_size <= _RESULT_FILE_LIMIT_BYTES
+        ):
+            raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            encoded = stream.read(_RESULT_FILE_LIMIT_BYTES + 1)
+        if len(encoded) > _RESULT_FILE_LIMIT_BYTES:
+            raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+        return encoded
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _decode_json(encoded: bytes) -> object:
+    try:
+        return json.loads(encoded.decode("utf-8", errors="strict"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+
+
+def load_transcription_result(result_dir: Path) -> BuiltTranscriptionResult:
+    """Load an exact immutable result and verify every canonical byte and hash."""
+
+    root = Path(result_dir)
+    try:
+        metadata = root.lstat()
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    try:
+        entries = {entry.name for entry in os.scandir(root)}
+    except OSError as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    if entries != _RESULT_FILE_NAMES:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+
+    bundle_bytes = _read_result_file(root / "transcript-bundle.json")
+    report_bytes = _read_result_file(root / "transcription-report.json")
+    manifest_bytes = _read_result_file(root / "manifest.json")
+    bundle = _decode_json(bundle_bytes)
+    report = _decode_json(report_bytes)
+    manifest = _decode_json(manifest_bytes)
+    if not all(isinstance(payload, dict) for payload in (bundle, report, manifest)):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    assert isinstance(bundle, dict)
+    assert isinstance(report, dict)
+    assert isinstance(manifest, dict)
+    try:
+        canonical_bundle = transcribe_takes.encode_transcript_bundle(bundle).encode(
+            "utf-8"
+        )
+        canonical_report = _canonical_bytes("transcription-report-v1", report)
+        canonical_manifest = _canonical_bytes(
+            "transcription-result-manifest-v1", manifest
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID") from error
+    if (
+        bundle_bytes != canonical_bundle
+        or report_bytes != canonical_report
+        or manifest_bytes != canonical_manifest
+        or manifest["bundle"]["sha256"]
+        != hashlib.sha256(bundle_bytes).hexdigest()
+        or manifest["report"]["sha256"]
+        != hashlib.sha256(report_bytes).hexdigest()
+    ):
+        raise ValueError("TRITRACK_TRANSCRIPT_RESULT_INVALID")
+    return BuiltTranscriptionResult(
+        bundle=bundle,
+        report=report,
+        manifest=manifest,
+        bundle_bytes=bundle_bytes,
+        report_bytes=report_bytes,
+        manifest_bytes=manifest_bytes,
+    )
+
+
+def _reuse_takes(
+    result: BuiltTranscriptionResult,
+) -> dict[str, transcribe_takes.TranscribedTake]:
+    takes = result.bundle["takes"]
+    assert isinstance(takes, list)
+    reusable: dict[str, transcribe_takes.TranscribedTake] = {}
+    for value in takes:
+        assert isinstance(value, dict)
+        take_id = str(value["takeId"])
+        cues = value["cues"]
+        assert isinstance(cues, list)
+        reusable[take_id] = transcribe_takes.TranscribedTake(
+            take_id=take_id,
+            source_sha256=str(value["sourceSha256"]),
+            status=str(value["status"]),
+            cues=tuple(dict(cue) for cue in cues),
+        )
+    return reusable
+
+
+def _require_absolute(path: Path) -> Path:
+    selected = Path(path)
+    if not selected.is_absolute():
+        raise ValueError("TRITRACK_PATH_NOT_ABSOLUTE")
+    return selected
+
+
+def transcribe_and_publish_result(
+    primary_paths: Sequence[Path],
+    *,
+    alternative_paths: Mapping[str, Sequence[Path]] | None,
+    model_path: Path,
+    language: str,
+    output_dir: Path,
+    reuse_from: Path | None = None,
+    ffmpeg_executable: str = "ffmpeg",
+    whisper_executable: str = "whisper-cli",
+) -> BuiltTranscriptionResult:
+    """Run the local decoder through retry/degrade and publish one result."""
+
+    destination = process.require_absent_output(_require_absolute(output_dir))
+    if not destination.parent.is_dir():
+        raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
+    if not primary_paths:
+        raise ValueError("TRITRACK_TRANSCRIPT_MEDIA_REQUIRED")
+    if not isinstance(language, str) or _LANGUAGE.fullmatch(language) is None:
+        raise ValueError("TRITRACK_TRANSCRIPT_LANGUAGE_INVALID")
+
+    primary = tuple(_require_absolute(Path(path)) for path in primary_paths)
+    take_ids = [path.name for path in primary]
+    if len(take_ids) != len(set(take_ids)):
+        raise ValueError("TRITRACK_TRANSCRIPT_DUPLICATE_TAKE")
+    alternatives = {
+        take_id: tuple(_require_absolute(Path(path)) for path in paths)
+        for take_id, paths in (alternative_paths or {}).items()
+    }
+    if set(alternatives) - set(take_ids):
+        raise ValueError("TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID")
+    for paths in alternatives.values():
+        if len(paths) != len(set(paths)):
+            raise ValueError("TRITRACK_TRANSCRIPT_ALTERNATIVE_INVALID")
+    all_paths = (*primary, *(path for paths in alternatives.values() for path in paths))
+    for path in all_paths:
+        transcribe_takes._require_readable_file(
+            path, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE"
+        )
+    selected_model = transcribe_takes._require_readable_file(
+        _require_absolute(model_path), "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE"
+    )
+    engine_version = transcribe_takes._read_engine_version(whisper_executable)
+    model_sha256 = transcribe_takes._sha256_file(
+        selected_model, "TRITRACK_TRANSCRIPT_MODEL_UNREADABLE"
+    )
+    source_hashes = {
+        path: transcribe_takes._sha256_file(
+            path, "TRITRACK_TRANSCRIPT_MEDIA_UNREADABLE"
+        )
+        for path in all_paths
+    }
+    requests = [
+        TranscriptionRequest(
+            take_id=path.name,
+            sources=tuple(
+                TranscriptionSource(candidate, source_hashes[candidate])
+                for candidate in (path, *alternatives.get(path.name, ()))
+            ),
+        )
+        for path in primary
+    ]
+    settings = TranscriptionSettings(
+        language=language,
+        recognition_model_sha256=model_sha256,
+        voice_activity="off",
+        voice_activity_model=None,
+    )
+    reuse = (
+        _reuse_takes(load_transcription_result(_require_absolute(reuse_from)))
+        if reuse_from is not None
+        else None
+    )
+
+    def decoder(
+        source: TranscriptionSource,
+        take_id: str,
+        _settings: TranscriptionSettings,
+    ) -> transcribe_takes.TranscribedTake:
+        return transcribe_takes.transcribe_source(
+            source.path,
+            take_id=take_id,
+            source_sha256=source.sha256,
+            model_path=selected_model,
+            model_sha256=model_sha256,
+            language=language,
+            ffmpeg_executable=ffmpeg_executable,
+            whisper_executable=whisper_executable,
+        )
+
+    result = build_transcription_result(
+        requests,
+        settings=settings,
+        engine_version=engine_version,
+        decoder=decoder,
+        reuse=reuse,
+    )
+    if (
+        transcribe_takes._sha256_file(selected_model) != model_sha256
+        or any(
+            transcribe_takes._sha256_file(path) != digest
+            for path, digest in source_hashes.items()
+        )
+    ):
+        raise ValueError("TRITRACK_TRANSCRIPT_INPUT_CHANGED")
+    publish_transcription_result(destination, result)
+    return result
