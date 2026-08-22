@@ -80,11 +80,15 @@ class StoryTimeline:
 
 
 @dataclass(frozen=True)
+class _RelationshipMember:
+    source: StorySource
+    offset_from_anchor_frames: int
+
+
+@dataclass(frozen=True)
 class _SourceRelationship:
     kind: str
-    source_a: StorySource | None
-    source_b: StorySource | None
-    offset_b_from_a_frames: int
+    members: tuple[_RelationshipMember, ...]
     audio_master: str
 
 
@@ -183,6 +187,62 @@ def _build_relationships(
             raise ValueError("TRITRACK_STORY_SYNC_CONFLICT")
         relationships[media_id] = relationship
 
+    if sync_map["schemaVersion"] == "tritrack.sync-map/v2":
+        groups = sync_map["groups"]
+        assert isinstance(groups, list)
+        for group in groups:
+            assert isinstance(group, Mapping)
+            anchor_payload = group["anchor"]
+            assert isinstance(anchor_payload, Mapping)
+            anchor_id = str(anchor_payload["mediaId"])
+            anchor = source_by_media.get(anchor_id)
+            if anchor is None or anchor.camera != "A":
+                raise ValueError("TRITRACK_STORY_SOURCE_SET_INVALID")
+            members = [_RelationshipMember(anchor, 0)]
+            sources_payload = group["sources"]
+            assert isinstance(sources_payload, list)
+            for source_payload in sources_payload:
+                assert isinstance(source_payload, Mapping)
+                media_id = str(source_payload["mediaId"])
+                source = source_by_media.get(media_id)
+                if source is None or source.camera != "B":
+                    raise ValueError("TRITRACK_STORY_SOURCE_SET_INVALID")
+                members.append(
+                    _RelationshipMember(
+                        source,
+                        string_out.seconds_to_frames(
+                            source_payload["offsetFromAnchorSeconds"],
+                            frame_duration,
+                        ),
+                    )
+                )
+            register(
+                anchor_id,
+                _SourceRelationship(
+                    kind="relay",
+                    members=tuple(members),
+                    audio_master=str(group["audioMaster"]),
+                ),
+            )
+        singles = sync_map["singles"]
+        assert isinstance(singles, list)
+        for single in singles:
+            assert isinstance(single, Mapping)
+            camera = str(single["camera"])
+            media_id = str(single["mediaId"])
+            source = source_by_media.get(media_id)
+            if source is None or source.camera != camera:
+                raise ValueError("TRITRACK_STORY_SOURCE_SET_INVALID")
+            register(
+                media_id,
+                _SourceRelationship(
+                    kind="single",
+                    members=(_RelationshipMember(source, 0),),
+                    audio_master=camera,
+                ),
+            )
+        return relationships
+
     pairs = sync_map["pairs"]
     assert isinstance(pairs, list)
     for pair in pairs:
@@ -198,14 +258,17 @@ def _build_relationships(
             or source_b.camera != "B"
         ):
             raise ValueError("TRITRACK_STORY_SOURCE_SET_INVALID")
-        offset_frames = string_out.seconds_to_frames(
-            pair["offsetBFromASeconds"], frame_duration
-        )
         relationship = _SourceRelationship(
             kind="pair",
-            source_a=source_a,
-            source_b=source_b,
-            offset_b_from_a_frames=offset_frames,
+            members=(
+                _RelationshipMember(source_a, 0),
+                _RelationshipMember(
+                    source_b,
+                    string_out.seconds_to_frames(
+                        pair["offsetBFromASeconds"], frame_duration
+                    ),
+                ),
+            ),
             audio_master=str(pair["audioMaster"]),
         )
         register(media_a, relationship)
@@ -223,16 +286,14 @@ def _build_relationships(
                 media_id,
                 _SourceRelationship(
                     kind="single",
-                    source_a=source if camera == "A" else None,
-                    source_b=source if camera == "B" else None,
-                    offset_b_from_a_frames=0,
+                    members=(_RelationshipMember(source, 0),),
                     audio_master=camera,
                 ),
             )
     return relationships
 
 
-def _paired_clips(
+def _relationship_clips(
     relationship: _SourceRelationship,
     selected: StorySource,
     *,
@@ -240,27 +301,44 @@ def _paired_clips(
     selected_end: int,
     story_offset: int,
 ) -> tuple[StoryClip, ...]:
-    assert relationship.source_a is not None
-    assert relationship.source_b is not None
-    global_starts = {
-        "A": 0,
-        "B": relationship.offset_b_from_a_frames,
-    }
-    selected_global_start = selected_start + global_starts[selected.camera]
-    selected_global_end = selected_end + global_starts[selected.camera]
-    master = (
-        relationship.source_a
-        if relationship.audio_master == "A"
-        else relationship.source_b
+    selected_member = next(
+        (member for member in relationship.members if member.source == selected),
+        None,
     )
-    master_start = global_starts[master.camera]
-    master_end = master_start + master.duration_frames
-    if master_start > selected_global_start or master_end < selected_global_end:
+    if selected_member is None:
+        raise ValueError("TRITRACK_STORY_SOURCE_HASH_MISMATCH")
+    selected_global_start = (
+        selected_start + selected_member.offset_from_anchor_frames
+    )
+    selected_global_end = selected_end + selected_member.offset_from_anchor_frames
+    audio_intersections = sorted(
+        (
+            max(selected_global_start, member.offset_from_anchor_frames),
+            min(
+                selected_global_end,
+                member.offset_from_anchor_frames + member.source.duration_frames,
+            ),
+        )
+        for member in relationship.members
+        if member.source.camera == relationship.audio_master
+        and min(
+            selected_global_end,
+            member.offset_from_anchor_frames + member.source.duration_frames,
+        )
+        > max(selected_global_start, member.offset_from_anchor_frames)
+    )
+    coverage_cursor = selected_global_start
+    for intersection_start, intersection_end in audio_intersections:
+        if intersection_start != coverage_cursor:
+            raise ValueError("TRITRACK_STORY_AUDIO_MASTER_COVERAGE")
+        coverage_cursor = intersection_end
+    if coverage_cursor != selected_global_end:
         raise ValueError("TRITRACK_STORY_AUDIO_MASTER_COVERAGE")
 
     clips: list[StoryClip] = []
-    for source in (relationship.source_a, relationship.source_b):
-        source_global_start = global_starts[source.camera]
+    for member in relationship.members:
+        source = member.source
+        source_global_start = member.offset_from_anchor_frames
         source_global_end = source_global_start + source.duration_frames
         intersection_start = max(selected_global_start, source_global_start)
         intersection_end = min(selected_global_end, source_global_end)
@@ -295,7 +373,15 @@ def build_story_timeline(
 ) -> StoryTimeline:
     """Re-derive and project selected cue spans into deterministic story time."""
 
-    _validate_contract("sync-map-v1", sync_map, "TRITRACK_STORY_SYNC_INVALID")
+    try:
+        sync_contract = contracts.contract_name_for_schema_version(
+            sync_map.get("schemaVersion")
+        )
+    except ValueError as error:
+        raise ValueError("TRITRACK_STORY_SYNC_INVALID") from error
+    if sync_contract not in {"sync-map-v1", "sync-map-v2"}:
+        raise ValueError("TRITRACK_STORY_SYNC_INVALID")
+    _validate_contract(sync_contract, sync_map, "TRITRACK_STORY_SYNC_INVALID")
     _validate_contract(
         "aligned-transcript-v1", aligned, "TRITRACK_STORY_ALIGNED_INVALID"
     )
@@ -349,11 +435,18 @@ def build_story_timeline(
         assert isinstance(segment, Mapping)
         take_id = str(segment["takeId"])
         take = take_by_id.get(take_id)
-        source = source_by_media.get(take_id)
         relationship = relationships.get(take_id)
-        if take is None or source is None or relationship is None:
+        if take is None or relationship is None:
             raise ValueError("TRITRACK_STORY_TAKE_UNKNOWN")
-        if take["sourceSha256"] != source.sha256:
+        source = next(
+            (
+                member.source
+                for member in relationship.members
+                if member.source.sha256 == take["sourceSha256"]
+            ),
+            None,
+        )
+        if source is None:
             raise ValueError("TRITRACK_STORY_SOURCE_HASH_MISMATCH")
 
         cues = take["cues"]
@@ -394,7 +487,7 @@ def build_story_timeline(
                 ),
             )
         else:
-            clips = _paired_clips(
+            clips = _relationship_clips(
                 relationship,
                 source,
                 selected_start=start_frames,
@@ -459,8 +552,19 @@ def _validate_timeline(timeline: StoryTimeline) -> None:
             or segment.duration_frames <= 0
             or not segment.title_text
             or not segment.clips
-            or sum(clip.audio_enabled for clip in segment.clips) != 1
         ):
+            raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+        audio_intervals = sorted(
+            (clip.offset_frames, clip.offset_frames + clip.duration_frames)
+            for clip in segment.clips
+            if clip.audio_enabled
+        )
+        audio_cursor = segment.offset_frames
+        for audio_start, audio_end in audio_intervals:
+            if audio_start != audio_cursor:
+                raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
+            audio_cursor = audio_end
+        if audio_cursor != segment.offset_frames + segment.duration_frames:
             raise ValueError("TRITRACK_STORY_TIMELINE_INVALID")
         for clip in segment.clips:
             source = source_by_key.get((clip.camera, clip.media_id))

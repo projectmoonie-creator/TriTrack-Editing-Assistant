@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import struct
 import tempfile
@@ -148,6 +149,40 @@ class SyncAlgorithmTest(unittest.TestCase):
                 profile_id="undeclared-profile",
                 evidence_for=lambda _a_clip, _b_clip: None,
             )
+
+    def test_sync_map_v2_keeps_a_temporal_relay_and_forced_audio_rig(self) -> None:
+        module = self.module()
+        self.assertIn(
+            "audio_master_mode",
+            inspect.signature(module.build_sync_map).parameters,
+            "sync-map-v2 audio-master boundary is not implemented",
+        )
+        anchor = self.clip("anchor.mov", "2026-08-13T01:00:00Z", 600.0)
+        first = self.clip("relay-first.mov", "2026-08-13T01:00:00Z", 300.0)
+        second = self.clip("relay-second.mov", "2026-08-13T01:05:00Z", 300.0)
+
+        def evidence_for(_anchor, source):
+            return {
+                "offset_seconds": 0.0 if source["id"] == "relay-first.mov" else 300.0,
+                "peak_ratio": 8.0 if source["id"] == "relay-first.mov" else 7.0,
+                "overlap_seconds": 300.0,
+            }
+
+        payload = module.build_sync_map(
+            [anchor],
+            [first, second],
+            profile_id="uhd-2997-ndf-fcpxml-1.14",
+            evidence_for=evidence_for,
+            today=date(2026, 8, 13),
+            audio_master_mode="B",
+        )
+
+        contracts.validate_contract("sync-map-v2", payload)
+        self.assertEqual(payload["groups"][0]["audioMaster"], "B")
+        self.assertEqual(
+            [source["mediaId"] for source in payload["groups"][0]["sources"]],
+            ["relay-first.mov", "relay-second.mov"],
+        )
 
 
 class SyncIntegrationTest(unittest.TestCase):
@@ -297,9 +332,12 @@ class SyncIntegrationTest(unittest.TestCase):
                     min_peak_ratio=1.0,
                 )
 
-            contracts.validate_contract("sync-map-v1", payload)
+            contracts.validate_contract("sync-map-v2", payload)
             self.assertEqual(json.loads(output.read_text()), payload)
-            self.assertEqual(payload["pairs"][0]["offsetBFromASeconds"], 2.0)
+            self.assertEqual(
+                payload["groups"][0]["sources"][0]["offsetFromAnchorSeconds"],
+                2.0,
+            )
             self.assertEqual(run.call_count, 4)
             self.assertEqual(
                 {call.args[0][0] for call in run.call_args_list},

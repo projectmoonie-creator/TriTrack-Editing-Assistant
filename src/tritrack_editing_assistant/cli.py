@@ -170,6 +170,7 @@ def _run_sync(arguments: argparse.Namespace) -> int:
             camera_b,
             profile_id=arguments.profile,
             output_path=arguments.output,
+            audio_master_mode=arguments.audio_master,
         )
     except ValueError as error:
         code = str(error).split(":", 1)[0]
@@ -771,10 +772,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--profile", required=True, help="public compatibility profile id")
     sync.add_argument(
+        "--audio-master",
+        choices=("A", "B", "auto"),
+        default="A",
+        help="force the audio rig, or explicitly request the loudness fallback",
+    )
+    sync.add_argument(
         "--output",
         required=True,
         type=Path,
-        help="create an absent sync-map-v1 JSON path",
+        help="create an absent sync-map-v2 JSON path",
     )
     sync.add_argument("--json", action="store_true", help="also print the sync map")
     sync.set_defaults(handler=_run_sync)

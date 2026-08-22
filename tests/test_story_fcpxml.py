@@ -281,6 +281,79 @@ class StoryTimelineTest(unittest.TestCase):
         )
         self.assertNotIn("reserve-b", [segment.segment_id for segment in timeline.segments])
 
+    def test_v2_relay_splits_one_story_selection_across_audio_sources(self) -> None:
+        sync_map = {
+            "schemaVersion": "tritrack.sync-map/v2",
+            "profileId": "uhd-2997-ndf-fcpxml-1.14",
+            "driftPrior": None,
+            "groups": [
+                {
+                    "groupId": "group-001",
+                    "anchor": {
+                        "camera": "A",
+                        "mediaId": "A-001.MP4",
+                        "durationSeconds": 10.0,
+                        "startedAt": None,
+                    },
+                    "sources": [
+                        {
+                            "camera": "B",
+                            "mediaId": "B-001.MP4",
+                            "offsetFromAnchorSeconds": 0.0,
+                            "durationSeconds": 2.0,
+                            "confidence": 8.0,
+                            "overlapSeconds": 3.0,
+                            "match": "correlation",
+                            "startedAt": None,
+                        },
+                        {
+                            "camera": "B",
+                            "mediaId": "B-002.MP4",
+                            "offsetFromAnchorSeconds": 2.0,
+                            "durationSeconds": 8.0,
+                            "confidence": 7.0,
+                            "overlapSeconds": 8.0,
+                            "match": "correlation",
+                            "startedAt": None,
+                        },
+                    ],
+                    "audioMaster": "B",
+                }
+            ],
+            "singles": [{"camera": "A", "mediaId": "A-002.MP4"}],
+            "warnings": [],
+        }
+        sources = invented_sources()
+        sources[0]["duration_seconds"] = Decimal(2)
+        sources.append(
+            {
+                "camera": "B",
+                "media_id": "B-002.MP4",
+                "path": Path("/invented/B-002.MP4"),
+                "duration_seconds": Decimal(8),
+                "sha256": "d" * 64,
+            }
+        )
+
+        try:
+            timeline = self.build(sync_map=sync_map, sources=sources)
+        except ValueError as error:
+            self.fail(f"story projection rejects sync-map-v2 relay: {error}")
+
+        paired = timeline.segments[1]
+        self.assertEqual(
+            [clip.media_id for clip in paired.clips],
+            ["A-001.MP4", "B-001.MP4", "B-002.MP4"],
+        )
+        self.assertEqual(
+            [clip.media_id for clip in paired.clips if clip.audio_enabled],
+            ["B-001.MP4", "B-002.MP4"],
+        )
+        self.assertEqual(
+            paired.clips[2].offset_frames,
+            paired.offset_frames + paired.clips[1].duration_frames,
+        )
+
     def test_rejects_authority_hash_and_copied_field_drift(self) -> None:
         with self.assertRaisesRegex(ValueError, "TRITRACK_STORY_AUTHORITY_INVALID"):
             self.build(aligned_sha256="9" * 64)

@@ -262,20 +262,20 @@ git commit -m "feat: define relay and transcription result contracts"
 - Modify: `tests/test_sync_scan.py`
 - Modify: `tests/test_cli.py`
 
-- [ ] **Step 1: Write RED builder and CLI tests**
+- [x] **Step 1: Write RED builder and CLI tests**
 
 Create a 600-second A anchor with B sources covering `[0,300]` and `[300,600]`.
 Assert both survive in one group, the higher-quality first source is primary,
 the second is relay coverage, the map validates as v2, and `--audio-master B`
 selects the highest-ranked B source even when A is louder.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `venv/bin/python -m unittest tests.test_sync_scan tests.test_cli.CliSmokeTest.test_sync_help -v`
 
 Expected: FAIL because sync still emits v1 and has no audio-master argument.
 
-- [ ] **Step 3: Implement evidence collection and deterministic selection**
+- [x] **Step 3: Implement evidence collection and deterministic selection**
 
 Collect every candidate measurement before selection. Derive drift as metadata
 offset minus audio offset only when time hints are sane. Compute a prior only
@@ -283,19 +283,19 @@ from strong-correlation samples, then pass all measurements through
 `pair_selection.select_pairs`. Serialize one group per A anchor in A input
 order, sources in selection order, and singles in camera/media order.
 
-- [ ] **Step 4: Publish and validate v2 without weakening v1 reads**
+- [x] **Step 4: Publish and validate v2 without weakening v1 reads**
 
 `publish_sync_map` resolves the schema from `schemaVersion`; new sync commands
 emit v2. Reject relative output paths through the existing path boundary and
 preserve absent-output publication.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `venv/bin/python -m unittest tests.test_pair_selection tests.test_sync_scan tests.test_cli -v`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/tritrack_editing_assistant/sync_scan.py src/tritrack_editing_assistant/cli.py tests/test_sync_scan.py tests/test_cli.py
@@ -312,7 +312,7 @@ git commit -m "feat: publish relay-capable sync maps"
 - Modify: `tests/test_story_fcpxml.py`
 - Modify: `tests/test_cli.py`
 
-- [ ] **Step 1: Write command-level RED relay tests**
+- [x] **Step 1: Write command-level RED relay tests**
 
 Feed a strict v2 relay map to the actual `emit` handler with invented probed
 sources. Assert the resulting FCPXML contains both B relay assets, clips their
@@ -321,14 +321,14 @@ anchor on the spine, and enables audio on only the map-declared rig. With a B
 master, both non-overlapping B relay clips carry audio while A does not; exactly
 one source is audible at every covered timeline instant.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `venv/bin/python -m unittest tests.test_string_out tests.test_story_fcpxml tests.test_cli -v`
 
 Expected: FAIL with `TRITRACK_CONTRACT_UNKNOWN` or the v1-only relationship
 error, proving relay cannot currently reach FCPXML.
 
-- [ ] **Step 3: Add a normalized relationship adapter**
+- [x] **Step 3: Add a normalized relationship adapter**
 
 Convert either v1 pairs or v2 groups into internal anchor/source spans. Keep
 version branching at input normalization; timeline/rendering code consumes one
@@ -336,7 +336,7 @@ internal representation. Reject overlapping reuse of the same media identity,
 missing sources, out-of-duration offsets, and an audio-master rig whose selected
 relay sources do not cover the full selected span.
 
-- [ ] **Step 4: Render relay intersections**
+- [x] **Step 4: Render relay intersections**
 
 For each timeline/story selection, intersect every source span with the anchor
 selection. Emit only positive intersections and require exactly one
@@ -344,13 +344,13 @@ audio-enabled clip at every covered timeline instant.
 Do not advertise simultaneous angles: a source excluded by coverage selection
 cannot reappear downstream.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `venv/bin/python -m unittest tests.test_string_out tests.test_story_fcpxml tests.test_cli -v`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/tritrack_editing_assistant/string_out.py src/tritrack_editing_assistant/emit_fcpxml.py src/tritrack_editing_assistant/story_fcpxml.py tests/test_string_out.py tests/test_story_fcpxml.py tests/test_cli.py

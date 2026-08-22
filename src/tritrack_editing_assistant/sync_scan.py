@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from . import contracts, doctor, process
+from . import contracts, doctor, pair_selection, process
 
 MIN_OVERLAP_SECONDS = 3.0
 MIN_PEAK_RATIO = 6.0
@@ -385,45 +385,117 @@ def build_sync_map(
     today: dt.date | None = None,
     min_peak_ratio: float = MIN_PEAK_RATIO,
     min_overlap_seconds: float = MIN_OVERLAP_SECONDS,
+    audio_master_mode: str = "A",
 ) -> dict[str, object]:
-    """Build and validate the public sync-map-v1 payload."""
+    """Build and validate relay-capable public sync-map-v2 authority."""
 
     doctor.load_profile(profile_id)
     _validate_unique_media(camera_a)
     _validate_unique_media(camera_b)
     hints_ok = time_hints_are_sane(camera_a, camera_b, today=today)
-    selected = select_strongest_pairs(
+    if audio_master_mode not in {"A", "B", "auto"}:
+        raise ValueError("TRITRACK_SYNC_AUDIO_MASTER_INVALID")
+    b_by_id = {str(clip["id"]): clip for clip in camera_b}
+    measurements: list[dict[str, object]] = []
+    for a_clip, b_clip in candidate_pairs(
         camera_a,
         camera_b,
-        evidence_for=evidence_for,
         hints_ok=hints_ok,
+        min_overlap_seconds=min_overlap_seconds,
+    ):
+        if not (a_clip.get("has_audio") and b_clip.get("has_audio")):
+            continue
+        evidence = evidence_for(a_clip, b_clip)
+        if evidence is None:
+            continue
+        drift: float | None = None
+        if hints_ok and isinstance(a_clip.get("start"), dt.datetime) and isinstance(
+            b_clip.get("start"), dt.datetime
+        ):
+            metadata_offset = (
+                b_clip["start"] - a_clip["start"]
+            ).total_seconds()
+            drift = metadata_offset - float(evidence["offset_seconds"])
+        measurements.append(
+            {
+                "take": str(a_clip["id"]),
+                "source": str(b_clip["id"]),
+                "overlap": float(evidence["overlap_seconds"]),
+                "ratio": float(evidence["peak_ratio"]),
+                "offset": float(evidence["offset_seconds"]),
+                "take_duration": float(a_clip["duration_seconds"]),
+                "source_duration": float(b_clip["duration_seconds"]),
+                "drift": drift,
+            }
+        )
+
+    strong_drifts = [
+        float(measurement["drift"])
+        for measurement in measurements
+        if measurement["drift"] is not None
+        and float(measurement["overlap"]) >= min_overlap_seconds
+        and float(measurement["ratio"]) >= min_peak_ratio
+    ]
+    prior = pair_selection.drift_prior(strong_drifts)
+    selected = pair_selection.select_pairs(
+        measurements,
+        prior=prior,
         min_peak_ratio=min_peak_ratio,
         min_overlap_seconds=min_overlap_seconds,
     )
-    a_by_id = {str(clip["id"]): clip for clip in camera_a}
-    selected_a = {str(pair["a"]) for pair in selected}
-    selected_b = {str(pair["b"]) for pair in selected}
+    selected_a = set(selected)
+    selected_b = {
+        str(option["source"])
+        for choice in selected.values()
+        for option in (choice["primary"], *choice["extra"])
+    }
 
-    pairs: list[dict[str, object]] = []
-    for index, pair in enumerate(selected, start=1):
-        a_clip = a_by_id[str(pair["a"])]
-        b_clip = next(
-            clip for clip in camera_b if str(clip["id"]) == str(pair["b"])
+    groups: list[dict[str, object]] = []
+    for a_clip in camera_a:
+        a_id = str(a_clip["id"])
+        choice = selected.get(a_id)
+        if choice is None:
+            continue
+        options = (choice["primary"], *choice["extra"])
+        source_records: list[dict[str, object]] = []
+        for option in options:
+            b_clip = b_by_id[str(option["source"])]
+            source_records.append(
+                {
+                    "camera": "B",
+                    "mediaId": str(option["source"]),
+                    "offsetFromAnchorSeconds": float(option["offset"]),
+                    "durationSeconds": float(option["source_duration"]),
+                    "confidence": float(option["ratio"]),
+                    "overlapSeconds": float(option["overlap"]),
+                    "match": str(option["match"]),
+                    "startedAt": _started_at_text(b_clip.get("start"))
+                    if hints_ok
+                    else None,
+                }
+            )
+        loudest_b = max(
+            (float(b_by_id[str(option["source"])].get("loudness", 0.0)) for option in options),
+            default=0.0,
         )
-        pairs.append(
+        master = pair_selection.audio_master(
+            float(a_clip.get("loudness", 0.0)),
+            loudest_b,
+            audio_master_mode,
+        )
+        groups.append(
             {
-                "pairId": f"pair-{index:03d}",
-                "mediaA": pair["a"],
-                "mediaB": pair["b"],
-                "offsetBFromASeconds": pair["offset_seconds"],
-                "confidence": pair["peak_ratio"],
-                "overlapSeconds": pair["overlap_seconds"],
-                "audioMaster": "A",
-                "durationASeconds": float(a_clip["duration_seconds"]),
-                "durationBSeconds": float(b_clip["duration_seconds"]),
-                "startedAt": _started_at_text(a_clip.get("start"))
-                if hints_ok
-                else None,
+                "groupId": f"group-{len(groups) + 1:03d}",
+                "anchor": {
+                    "camera": "A",
+                    "mediaId": a_id,
+                    "durationSeconds": float(a_clip["duration_seconds"]),
+                    "startedAt": _started_at_text(a_clip.get("start"))
+                    if hints_ok
+                    else None,
+                },
+                "sources": source_records,
+                "audioMaster": master,
             }
         )
 
@@ -437,18 +509,30 @@ def build_sync_map(
             )
 
     payload: dict[str, object] = {
-        "schemaVersion": "tritrack.sync-map/v1",
+        "schemaVersion": "tritrack.sync-map/v2",
         "profileId": profile_id,
-        "pairs": pairs,
-        "singleA": [
-            str(clip["id"]) for clip in camera_a if str(clip["id"]) not in selected_a
-        ],
-        "singleB": [
-            str(clip["id"]) for clip in camera_b if str(clip["id"]) not in selected_b
+        "driftPrior": (
+            {
+                "centreSeconds": prior[0],
+                "toleranceSeconds": prior[1],
+                "sampleCount": len(strong_drifts),
+            }
+            if prior is not None
+            else None
+        ),
+        "groups": groups,
+        "singles": [
+            {"camera": camera, "mediaId": str(clip["id"])}
+            for camera, clips, selected_ids in (
+                ("A", camera_a, selected_a),
+                ("B", camera_b, selected_b),
+            )
+            for clip in clips
+            if str(clip["id"]) not in selected_ids
         ],
         "warnings": warnings,
     }
-    contracts.validate_contract("sync-map-v1", payload)
+    contracts.validate_contract("sync-map-v2", payload)
     return payload
 
 
@@ -457,7 +541,11 @@ def publish_sync_map(
 ) -> Path:
     """Atomically create one validated map without overwriting any path."""
 
-    contracts.validate_contract("sync-map-v1", payload)
+    schema_version = payload.get("schemaVersion") if isinstance(payload, Mapping) else None
+    contract = contracts.contract_name_for_schema_version(schema_version)
+    if contract not in {"sync-map-v1", "sync-map-v2"}:
+        raise ValueError("TRITRACK_SYNC_MAP_INVALID")
+    contracts.validate_contract(contract, payload)
     destination = process.require_absent_output(output_path)
     if not destination.parent.is_dir():
         raise ValueError("TRITRACK_OUTPUT_PARENT_MISSING")
@@ -493,6 +581,7 @@ def synchronize_and_publish(
     sample_rate: int = DEFAULT_SAMPLE_RATE,
     min_peak_ratio: float = MIN_PEAK_RATIO,
     min_overlap_seconds: float = MIN_OVERLAP_SECONDS,
+    audio_master_mode: str = "A",
 ) -> dict[str, object]:
     """Probe, correlate, validate, and publish one local synchronization map."""
 
@@ -528,6 +617,7 @@ def synchronize_and_publish(
         today=today,
         min_peak_ratio=min_peak_ratio,
         min_overlap_seconds=min_overlap_seconds,
+        audio_master_mode=audio_master_mode,
     )
     publish_sync_map(output_path, payload)
     return payload

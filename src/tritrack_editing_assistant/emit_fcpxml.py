@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 
 from jsonschema import ValidationError
@@ -40,7 +41,7 @@ class ProjectMetadata:
 
 
 def load_sync_map(path: str | os.PathLike[str]) -> dict[str, object]:
-    """Load one strict sync-map-v1 while preserving decimal spellings."""
+    """Load one installed sync-map version while preserving decimal spellings."""
 
     source = Path(path)
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
@@ -76,8 +77,13 @@ def load_sync_map(path: str | os.PathLike[str]) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("TRITRACK_EMIT_SYNC_MAP_INVALID")
     try:
-        contracts.validate_contract("sync-map-v1", payload)
-    except ValidationError as error:
+        contract = contracts.contract_name_for_schema_version(
+            payload.get("schemaVersion")
+        )
+        if contract not in {"sync-map-v1", "sync-map-v2"}:
+            raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID")
+        contracts.validate_contract(contract, payload)
+    except (ValidationError, ValueError) as error:
         raise ValueError("TRITRACK_EMIT_SYNC_MAP_INVALID") from error
     return payload
 
@@ -302,6 +308,30 @@ def _validate_time_values(root: ET.Element, profile: Mapping[str, object]) -> No
                 raise ValueError("TRITRACK_FCPXML_TIME_INVALID")
 
 
+def _time_numerator(value: str) -> int:
+    if value == "0s":
+        return 0
+    return int(value.split("/", 1)[0])
+
+
+def _audio_intervals_do_not_overlap(clips: Sequence[ET.Element]) -> bool:
+    intervals = sorted(
+        (
+            _time_numerator(clip.attrib["offset"]),
+            _time_numerator(clip.attrib["offset"])
+            + _time_numerator(clip.attrib["duration"]),
+        )
+        for clip in clips
+        if clip.attrib.get("srcEnable") == "all"
+    )
+    return bool(intervals) and all(
+        current_start >= previous_end
+        for (_previous_start, previous_end), (current_start, _current_end) in pairwise(
+            intervals
+        )
+    )
+
+
 def validate_fcpxml(
     text: str,
     *,
@@ -402,7 +432,7 @@ def validate_fcpxml(
         clips = gap.findall("./asset-clip")
         if (
             not clips
-            or sum(clip.attrib.get("srcEnable") == "all" for clip in clips) != 1
+            or not _audio_intervals_do_not_overlap(clips)
             or any(
                 clip.attrib.get("srcEnable") not in {"all", "video"}
                 or (

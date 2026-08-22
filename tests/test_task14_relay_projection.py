@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
 from jsonschema.exceptions import ValidationError
 
-from tritrack_editing_assistant import doctor, string_out
+from tritrack_editing_assistant import doctor, emit_fcpxml, string_out
 
 
 class RelayProjectionRedTest(unittest.TestCase):
@@ -96,6 +98,29 @@ class RelayProjectionRedTest(unittest.TestCase):
         )
         self.assertEqual(clips[1].offset_frames, 0)
         self.assertGreater(clips[2].offset_frames, clips[1].offset_frames)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            sync_path = Path(temporary) / "sync-map.json"
+            sync_path.write_text(json.dumps(sync_map), encoding="utf-8")
+            try:
+                loaded = emit_fcpxml.load_sync_map(sync_path)
+            except ValueError as error:
+                self.fail(f"emit command loader rejects sync-map-v2: {error}")
+        self.assertEqual(loaded["schemaVersion"], "tritrack.sync-map/v2")
+
+        try:
+            rendered = emit_fcpxml.render_fcpxml(
+                sync_map,
+                sources,
+                profile_id="uhd-2997-ndf-fcpxml-1.14",
+                binding_id="basic-title-v1",
+                metadata=emit_fcpxml.ProjectMetadata("Invented event", "Relay cut"),
+            )
+        except ValueError as error:
+            self.fail(f"sync-map-v2 relay does not reach valid FCPXML: {error}")
+        self.assertEqual(rendered.count('srcEnable="all"'), 2)
+        self.assertIn('name="relay-first.mov"', rendered)
+        self.assertIn('name="relay-second.mov"', rendered)
 
 
 if __name__ == "__main__":

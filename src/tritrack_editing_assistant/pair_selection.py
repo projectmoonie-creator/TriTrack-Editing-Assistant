@@ -70,12 +70,18 @@ def new_coverage_seconds(
     return sum(end - start for start, end in remaining)
 
 
-def accept(measurement: Measurement, prior: DriftPrior | None) -> str | None:
+def accept(
+    measurement: Measurement,
+    prior: DriftPrior | None,
+    *,
+    min_peak_ratio: float = MIN_PEAK_RATIO,
+    min_overlap_seconds: float = MIN_OVERLAP_SECONDS,
+) -> str | None:
     """Accept by measured correlation first, then by a coherent drift prior."""
 
-    if float(measurement["overlap"]) < MIN_OVERLAP_SECONDS:
+    if float(measurement["overlap"]) < min_overlap_seconds:
         return None
-    if float(measurement["ratio"]) >= MIN_PEAK_RATIO:
+    if float(measurement["ratio"]) >= min_peak_ratio:
         return "correlation"
     drift = measurement.get("drift")
     if prior is None or drift is None:
@@ -87,13 +93,22 @@ def accept(measurement: Measurement, prior: DriftPrior | None) -> str | None:
 
 
 def select_pairs(
-    measurements: Sequence[Measurement], *, prior: DriftPrior | None = None
+    measurements: Sequence[Measurement],
+    *,
+    prior: DriftPrior | None = None,
+    min_peak_ratio: float = MIN_PEAK_RATIO,
+    min_overlap_seconds: float = MIN_OVERLAP_SECONDS,
 ) -> dict[str, dict[str, object]]:
     """Choose one primary source per take and temporal relay extras."""
 
     accepted: dict[str, list[dict[str, object]]] = {}
     for measurement in measurements:
-        match = accept(measurement, prior)
+        match = accept(
+            measurement,
+            prior,
+            min_peak_ratio=min_peak_ratio,
+            min_overlap_seconds=min_overlap_seconds,
+        )
         if match is None:
             continue
         take = str(measurement["take"])
@@ -146,4 +161,3 @@ def audio_master(loudness_a: float, loudness_b: float, mode: str) -> str:
     if mode in {"A", "B"}:
         return mode
     return "A" if loudness_a >= loudness_b else "B"
-
