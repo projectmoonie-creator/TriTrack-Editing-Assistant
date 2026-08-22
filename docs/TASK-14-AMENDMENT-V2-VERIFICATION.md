@@ -63,9 +63,11 @@ a usable source, selected empty-as-sparse drift, mixed／noncanonical embedded
 result families, ceiling-millisecond threshold drift, a threshold row missing
 the density value, and two semantic tests that failed prematurely on stale
 density bytes. Each counterexample received a dedicated RED test before its
-bounded fix. The corrected focused suites passed 92 tests, followed by a
-complete 344-test pass; Ruff, compilation, diff hygiene, and the final clean
-release gate are rerun at closeout.
+bounded fix. The corrected focused suites passed 92 tests. The package-bearing
+closeout then passed 344 tests, Ruff, compilation, diff hygiene, and the full
+clean maintainer release gate. Its exact commit and artifact hashes are kept in
+the package-excluded public status／closeout ledger so adding the evidence does
+not change the archive it describes.
 
 ## Amendment review provenance and adjudication
 
