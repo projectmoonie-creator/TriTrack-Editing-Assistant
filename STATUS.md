@@ -1,6 +1,6 @@
 # Public maintenance status
 
-Updated: 2026-08-18
+Updated: 2026-08-22
 Project kind: public engine
 Lane: `OSS`
 Release state: public pre-release source; no tag, package publication, or
@@ -8,7 +8,7 @@ tester outreach
 
 ## Current gate
 
-Tasks 1–13 are complete in this public candidate. Task 6 began from exact
+Tasks 1–14 are complete in this public candidate. Task 6 began from exact
 Task 5 candidate `dc2aa78380749cc2787606cdb9702a71725cf21b` after `main` was
 fast-forwarded from `41d5034addcc1f870ec7b055f62b69c38cae415b` with no history
 rewrite or merge commit.
@@ -230,12 +230,52 @@ GitHub Release, pull request, tester contact, signing, attestation, SBOM,
 Final Cut GUI, DTD, live-provider, application-submission, or
 production-stability claim. Evidence is in `docs/TASK-13-VERIFICATION.md`.
 
+Task 14 post-review target
+`ea3a73fc3225bb2c3841e7bd435a2dd6e94e1ff3` consumes the hash-bound public
+clean-room handoff at base `d952c1f`, independently reimplements transcript
+anomaly and temporal pair-selection policy, and adds path-free transcription
+attempt provenance, synchronized alternative-source retry, honest reuse
+unknowns, per-take degradation, and manifest-last result publication. New
+`sync-map-v2` and `run-manifest-v2` authority carries selected relay sources,
+coverage, audio master, bundle, report, result manifest, and deterministic
+FCPXML projections. Existing v1 readers remain supported, and the exact
+`run-manifest-v1` schema bytes remain pinned.
+
+Post-review RED tests found that individually valid and correctly rehashed
+bundle／report files could disagree semantically, and that a primary path could
+be mapped back as its own alternative. The shared standalone and run loaders
+now enforce semantic cross-binding for take identity, bundle membership,
+selected source, attempt order, retry settings, reuse unknowns, and terminal
+outcomes; duplicate primary／alternative paths fail before the engine starts.
+The coherent candidate passed 299 tests, Ruff, diff hygiene, and the full clean
+release gate. The gate produced wheel SHA-256
+`872b0bb15616f7b5b4f41188f463b0ab47ecf99617d1d1429ce90bd4f64cae87`,
+sdist SHA-256
+`9b3f083e8c630eefbae621c0176c349e533c7d5e11e6144d820abd2f03e5d12f`,
+and release-manifest SHA-256
+`3caf84fe590f2b1771c5598c3230124201659005fd903ff572b10473b650bf8a`.
+
+Gemini requested, observed, and completed `gemini-3.7-flash`, but its
+non-source-grounded `NO FINDINGS` result is retained only as a packet-level
+advisory. Claude's single subscription-only attempt requested the dynamic
+`opus` capability alias and ended `claude-timeout` with no observed or
+completed model or usable response; it remains incomplete without retry,
+downgrade, substitution, or paid fallback. Complete adjudication is in
+`docs/reviews/task-14-closeout-2026-08-22.md`.
+
+Voice-activity detection remains off and no VAD switch or caller-supplied VAD
+model path exists. Task 14 does not claim the deferred VAD default, recognition
+accuracy, simultaneous N-camera preservation, a downstream parity run, a tag,
+release, package publication, private integration, or production stability.
+
 ## Next action
 
-Commit the sanitized Task 13 review evidence, rerun the clean release gate,
-fast-forward the reviewed candidate to public `main`, and verify the fixed
-six-job CI run at the exact remote SHA. This next action does not authorize a
-tag, release, package publication, private integration, or tester contact.
+No automatic implementation follows Task 14. Keep VAD off until a separately
+authorized public task supplies a closed, non-rejected model pin with exact
+byte length and SHA-256 and proves the installed-engine argument contract.
+A downstream parity proof also remains outside this public candidate until an
+explicitly authorized public release exists. Do not infer authority for a tag,
+release, package publication, private integration, or tester contact.
 
 ## Implemented surface
 
@@ -246,6 +286,10 @@ tag, release, package publication, private integration, or tester contact.
 - profile-bound deterministic string-out and atomic FCPXML 1.14 publication;
 - fixed-profile CPU-only local transcription with strict deterministic bundle
   canonicalization and atomic no-overwrite publication;
+- anomaly-bound transcription results with alternative retry, honest reuse
+  provenance, per-take degradation, and semantic bundle／report cross-binding;
+- relay-capable `sync-map-v2` and `run-manifest-v2` authority with forced audio
+  master and deterministic string-out／story projection;
 - deterministic cue-addressed text promotion with immutable local timing and
   exact-byte provenance;
 - optional offline Gemini receipt conformance that shares the local promotion
