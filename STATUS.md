@@ -1,6 +1,6 @@
 # Public maintenance status
 
-Updated: 2026-08-22
+Updated: 2026-08-23
 Project kind: public engine
 Lane: `OSS`
 Release state: public pre-release source; no tag, package publication, or
@@ -282,6 +282,31 @@ v1／v2 run bundles remain readable. VAD stays off with no new switch, model
 path, or model pin. Public decision and verification are in
 `docs/TASK-14-AMENDMENT-V2-DECISION.md` and
 `docs/TASK-14-AMENDMENT-V2-VERIFICATION.md`.
+
+The first amendment target
+`7232267a236cbb35f210d5088cb02ca69201d473` passed 337 tests but its
+source-grounded Codex review reproduced six required gaps: a retry could follow
+a usable source, an empty take could be relabelled selected-sparse, embedded
+runs accepted mixed／noncanonical result families, ceiling milliseconds could
+misclassify 29.9999375 seconds, the human threshold row omitted the density
+threshold, and two semantic tests retained stale density bytes. All six were
+accepted and fixed at
+`f8b77e65ac0a51d19efbda159d7441cb3be870e4` with dedicated RED tests.
+
+Package-bearing closeout target
+`90c6f45e9354cda7eb4da9fd3328fb6709268592` passed 344 tests, Ruff,
+compilation, diff hygiene, and the full clean maintainer release gate. The gate
+produced wheel SHA-256
+`f3bda52dba240a1160aa657b0dea99dc744dc5fb6d9d74a712acf5041f2d070c`,
+sdist SHA-256
+`6abe6b98ba5261b2267cf373c1230eb63f46fbb052b3fdcfe49867018d601f0e`,
+and release-manifest SHA-256
+`5aefc5e2113808860e8dea7c1d1663f7419f550bcb9a4bf8a9ac649f4564969c`.
+Gemini requested／observed／completed `gemini-3.7-flash` and returned a
+packet-level `NO FINDINGS` advisory; source-grounded Codex requested／observed／
+completed `gpt-5.6-sol`, returned the six adjudicated findings, and changed no
+file. Complete package-excluded closeout evidence is in
+`docs/reviews/task-14-amendment-v2-closeout-2026-08-23.md`.
 
 The required Claude convergence supplement reused the byte-identical Task 14
 packet at SHA-256
