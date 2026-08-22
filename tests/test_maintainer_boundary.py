@@ -211,6 +211,10 @@ class MaintainerBoundaryTest(unittest.TestCase):
         self.assertIn("semantic cross-binding", task_14_closeout)
         self.assertIn("claude-timeout", task_14_closeout)
         self.assertIn("advisory", task_14_closeout)
+        self.assertIn(
+            "d952c1fe41563c38c7859250b3f95b3d93e8929f",
+            task_14_closeout,
+        )
         self.assertNotIn("Commit the sanitized Task 13 review evidence", status)
         self.assertIn("alphaReviewTarget", task_12_verification)
         self.assertIn("alphaEvidenceRecord", task_12_verification)
